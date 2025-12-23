@@ -2,7 +2,7 @@
 HIMARI Data Connectors Package
 
 Free API integrations for:
-- Market Data: Binance, CoinGecko, CoinCap, CryptoCompare
+- Market Data: Binance, CoinGecko, CoinCap, Polygon.io
 - Social Sentiment: Reddit, Twitter
 - News: NewsData.io, Finnhub
 - On-Chain: Etherscan, Alchemy
@@ -11,6 +11,7 @@ Free API integrations for:
 from .binance_connector import BinanceConnector, BinanceWebSocket
 from .coingecko_connector import CoinGeckoConnector
 from .coincap_connector import CoinCapConnector
+from .polygon_connector import PolygonCryptoConnector
 from .reddit_connector import RedditConnector
 from .news_connector import NewsDataConnector, FinnhubConnector
 from .etherscan_connector import EtherscanConnector
@@ -21,6 +22,7 @@ __all__ = [
     'BinanceWebSocket', 
     'CoinGeckoConnector',
     'CoinCapConnector',
+    'PolygonCryptoConnector',
     # Social
     'RedditConnector',
     # News
