@@ -1,5 +1,5 @@
 """
-50-Dimensional Feature Vector Assembler for HIMARI L1
+60-Dimensional Feature Vector Assembler for HIMARI L1
 
 Assembles the complete L1 feature vector from all primitive components.
 This is the output format consumed by Layer 2 ML models.
@@ -11,17 +11,18 @@ Feature Categories:
 - 10 Volume features (CVD, RVOL, OBI)
 - 8 Statistical features (correlations, quantiles)
 - 4 Meta features (DS confidence, drawdown forecast)
-- 4 SMC/microstructure features (if available)
+- 4 SMC/microstructure features
+- 10 Order Flow features (NEW: OBI real-time, CVD, VPIN, microprice)
 
 All features normalized to [-1, 1] or [0, 1].
-Total latency target: <10ms per symbol.
+Total latency target: <12ms per symbol.
 
 Usage:
     assembler = FeatureVectorAssembler(primitives)
     
     for ohlcv in data:
         features = assembler.update(ohlcv)
-        # features is 50-element numpy array
+        # features is 60-element numpy array
 """
 
 import numpy as np
@@ -42,13 +43,13 @@ class OHLCVData:
 
 class FeatureVectorAssembler:
     """
-    Assembles the 50-dimensional feature vector from primitives.
+    Assembles the 60-dimensional feature vector from primitives.
     
     All components must be initialized externally and passed in.
     This class just coordinates updates and normalization.
     """
     
-    FEATURE_DIM = 50
+    FEATURE_DIM = 60  # Expanded from 50 to include order flow
     
     def __init__(
         self,
@@ -65,7 +66,8 @@ class FeatureVectorAssembler:
         ensemble=None,
         dempster_shafer=None,
         tdigest=None,
-        covariance=None
+        covariance=None,
+        order_flow=None,  # NEW: OrderFlowFeatures instance
     ):
         """
         Initialize with primitive components.
@@ -87,6 +89,7 @@ class FeatureVectorAssembler:
         self.dempster_shafer = dempster_shafer
         self.tdigest = tdigest
         self.covariance = covariance
+        self.order_flow = order_flow  # NEW: OrderFlowFeatures
         
         # Feature metadata
         self._feature_names = self._create_feature_names()
@@ -174,6 +177,20 @@ class FeatureVectorAssembler:
             'spread_normalized',
             'impact_estimate',
             'execution_risk',
+        ])
+        
+        # Order Flow features (50-59) - NEW
+        names.extend([
+            'orderflow_obi_current',
+            'orderflow_obi_ema',
+            'orderflow_cvd_normalized',
+            'orderflow_cvd_divergence',
+            'orderflow_microprice_dev',
+            'orderflow_vpin',
+            'orderflow_spread_zscore',
+            'orderflow_lob_imbalance',
+            'orderflow_trade_intensity',
+            'orderflow_aggressive_ratio',
         ])
         
         return names
@@ -331,6 +348,23 @@ class FeatureVectorAssembler:
         features[47] = 0  # Spread normalized
         features[48] = 0  # Impact estimate
         features[49] = 0  # Execution risk
+        
+        # === ORDER FLOW FEATURES (50-59) - NEW ===
+        if self.order_flow:
+            order_flow_vec = self.order_flow.get_feature_vector()
+            features[50:60] = order_flow_vec
+        else:
+            # Placeholders if order_flow not provided
+            features[50] = 0  # obi_current
+            features[51] = 0  # obi_ema
+            features[52] = 0  # cvd_normalized
+            features[53] = 0  # cvd_divergence
+            features[54] = 0  # microprice_dev
+            features[55] = 0  # vpin
+            features[56] = 0  # spread_zscore
+            features[57] = 0  # lob_imbalance
+            features[58] = 0  # trade_intensity
+            features[59] = 0.5  # aggressive_ratio
         
         # Store and return
         self._last_features = features
