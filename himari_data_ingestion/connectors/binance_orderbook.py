@@ -153,8 +153,11 @@ class BinanceOrderBookConnector(BaseConnector):
         self._ws = None
         self._running = False
         
-        # Build stream URL
-        streams = [f"{s}@depth{depth}@{update_speed}" for s in self.symbols]
+        # Build stream URL (order book + trades)
+        streams = []
+        for s in self.symbols:
+            streams.append(f"{s}@depth{depth}@{update_speed}")
+            streams.append(f"{s}@aggTrade")  # Add trade stream
         stream_param = "/".join(streams)
         self._url = f"{self.BASE_URL}/stream?streams={stream_param}"
         
@@ -198,35 +201,37 @@ class BinanceOrderBookConnector(BaseConnector):
                 await self._backoff()
     
     async def _process_messages(self, ws) -> None:
-        """Process incoming order book messages."""
+        """Process incoming order book and trade messages."""
         async for raw_message in ws:
             try:
                 data = json.loads(raw_message)
-                
+
                 # Combined stream format
                 if "stream" in data:
                     stream_name = data["stream"]
                     payload = data["data"]
                 else:
                     payload = data
-                
-                # Parse order book
-                snapshot = self._parse_order_book(payload)
-                
-                # Store latest
-                self._order_books[snapshot.symbol] = snapshot
-                
-                # Normalize to HIMARI format
-                normalized = self._normalize(snapshot)
-                
-                if self._callback:
+                    stream_name = ""
+
+                # Route by stream type
+                if "aggTrade" in stream_name or payload.get("e") == "aggTrade":
+                    # Trade message
+                    normalized = self._parse_and_normalize_trade(payload)
+                else:
+                    # Order book message
+                    snapshot = self._parse_order_book(payload)
+                    self._order_books[snapshot.symbol] = snapshot
+                    normalized = self._normalize(snapshot)
+
+                if self._callback and normalized:
                     await self._safe_callback(normalized)
-                
+
                 self._message_count += 1
                 self._last_message_time = time.time()
-                
+
             except Exception as e:
-                logger.error(f"Error processing order book: {e}")
+                logger.error(f"Error processing message: {e}")
     
     def _parse_order_book(self, data: Dict) -> OrderBookSnapshot:
         """Parse Binance depth stream message."""
@@ -241,12 +246,14 @@ class BinanceOrderBookConnector(BaseConnector):
         )
     
     def _normalize(self, snapshot: OrderBookSnapshot) -> Dict[str, Any]:
-        """Convert to HIMARI format."""
+        """Convert order book to HIMARI format."""
         return {
             "symbol": snapshot.symbol,
             "exchange": self.EXCHANGE_NAME,
             "timestamp": snapshot.timestamp,
-            "type": "order_book",
+            "type": "orderbook",  # Match signal_processor.py expectation
+            "bids": snapshot.bids,  # Full list for OrderFlowFeatures
+            "asks": snapshot.asks,
             "best_bid": snapshot.best_bid,
             "best_ask": snapshot.best_ask,
             "mid_price": snapshot.mid_price,
@@ -255,8 +262,37 @@ class BinanceOrderBookConnector(BaseConnector):
             "order_book_imbalance": snapshot.get_order_book_imbalance(5),
             "bid_depth_1pct": snapshot.get_depth_at_price(1.0)['bid_depth'],
             "ask_depth_1pct": snapshot.get_depth_at_price(1.0)['ask_depth'],
-            "bids_top5": snapshot.bids[:5],
-            "asks_top5": snapshot.asks[:5],
+            "received_at": int(time.time() * 1000),
+        }
+
+    def _parse_and_normalize_trade(self, data: Dict) -> Dict[str, Any]:
+        """
+        Parse and normalize Binance aggTrade message.
+
+        Binance format:
+        {
+            "e": "aggTrade",
+            "E": 123456789,  # Event time
+            "s": "BTCUSDT",
+            "a": 12345,      # Aggregate trade ID
+            "p": "0.001",    # Price
+            "q": "100",      # Quantity
+            "f": 100,        # First trade ID
+            "l": 105,        # Last trade ID
+            "T": 123456785,  # Trade time
+            "m": true,       # Is buyer maker?
+            "M": true        # Ignore
+        }
+        """
+        return {
+            "symbol": data.get("s", "").upper(),
+            "exchange": self.EXCHANGE_NAME,
+            "timestamp": data.get("T", int(time.time() * 1000)),
+            "type": "trade",  # Match signal_processor.py expectation
+            "price": float(data.get("p", 0)),
+            "quantity": float(data.get("q", 0)),
+            "is_buyer_maker": data.get("m", False),
+            "trade_id": data.get("a", 0),
             "received_at": int(time.time() * 1000),
         }
     

@@ -29,6 +29,7 @@ from config import (
 )
 from connectors.base import ConnectionState
 from connectors.binance import BinanceConnector
+from connectors.binance_orderbook import BinanceOrderBookConnector
 from connectors.kraken import KrakenConnector
 from connectors.coingecko import CoinGeckoPoller
 from publishers.kafka_publisher import KafkaPublisher
@@ -93,13 +94,15 @@ class DataIngestionService:
         
         self._running = True
         
-        # Setup signal handlers for graceful shutdown
-        loop = asyncio.get_event_loop()
-        for sig in (signal.SIGINT, signal.SIGTERM):
-            loop.add_signal_handler(
-                sig, 
-                lambda: asyncio.create_task(self.shutdown())
-            )
+        # Setup signal handlers for graceful shutdown (Unix only)
+        import sys
+        if sys.platform != 'win32':
+            loop = asyncio.get_event_loop()
+            for sig in (signal.SIGINT, signal.SIGTERM):
+                loop.add_signal_handler(
+                    sig, 
+                    lambda: asyncio.create_task(self.shutdown())
+                )
         
         try:
             # 1. Connect to Kafka/Redpanda
@@ -139,13 +142,23 @@ class DataIngestionService:
         
         # Binance - Primary source (free, fastest, most reliable)
         if self.config.enable_binance:
-            logger.info("Setting up Binance connector...")
+            logger.info("Setting up Binance OHLCV connector...")
             binance = BinanceConnector(
                 symbols=self.symbols,
                 interval="1m",
             )
             binance.set_callback(self._on_message)
             self._connectors["binance"] = binance
+
+            # Binance Order Book + Trades (for order flow features)
+            logger.info("Setting up Binance Order Book connector...")
+            binance_orderbook = BinanceOrderBookConnector(
+                symbols=self.symbols,
+                depth=20,
+                update_speed="100ms",
+            )
+            binance_orderbook.set_callback(self._on_message)
+            self._connectors["binance_orderbook"] = binance_orderbook
         
         # Kraken - Backup source
         if self.config.enable_kraken:
