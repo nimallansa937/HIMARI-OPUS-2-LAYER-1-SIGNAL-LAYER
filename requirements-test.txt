@@ -1,0 +1,12 @@
+# HIMARI L1 Signal Layer - Minimal Test Requirements
+# These are the core dependencies needed for tests to pass
+
+# Core
+numpy>=1.24.0
+scipy>=1.11.0
+
+# Streaming algorithms  
+tdigest>=0.5.2
+
+# Testing
+pytest>=7.4.0
