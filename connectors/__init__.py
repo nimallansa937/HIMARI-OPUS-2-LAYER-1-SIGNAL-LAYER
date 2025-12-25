@@ -29,6 +29,11 @@ Usage:
     telegram = create_telegram_connector()
     messages = telegram.get_messages("@cryptowhalesignal")
     sentiment = telegram.analyze_sentiment("@cryptowhalesignal")
+    
+    # Santiment (free, requires API key)
+    santiment = create_santiment_connector(api_key="your_key")
+    sentiment = santiment.get_social_sentiment("BTC", days=7)
+    analysis = santiment.analyze_sentiment("BTC")
 """
 
 from .stocktwits_connector import (
@@ -51,6 +56,12 @@ from .telegram_connector import (
     CRYPTO_TELEGRAM_CHANNELS,
 )
 
+from .santiment_connector import (
+    SantimentConnector,
+    SantimentSocialData,
+    create_santiment_connector,
+)
+
 __all__ = [
     # StockTwits
     "StockTwitsConnector",
@@ -66,4 +77,8 @@ __all__ = [
     "TelegramMessage",
     "create_telegram_connector",
     "CRYPTO_TELEGRAM_CHANNELS",
+    # Santiment
+    "SantimentConnector",
+    "SantimentSocialData",
+    "create_santiment_connector",
 ]
