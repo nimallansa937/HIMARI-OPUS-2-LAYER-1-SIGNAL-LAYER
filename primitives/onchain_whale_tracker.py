@@ -76,7 +76,7 @@ class OnChainWhaleTracker:
             config: Configuration dict with API keys and settings
         """
         self.santiment_key = config.get('santiment_api_key') or os.getenv('SANTIMENT_API_KEY')
-        self.cryptoquant_key = config.get('cryptoquant_api_key') or os.getenv('CRYPTOQUANT_API_KEY')
+        self.dune_key = config.get('dune_api_key') or os.getenv('DUNE_API_KEY', 'barQKj36basZqbg59tEzbc5vDmN021er')
         self.update_interval = config.get('update_interval', 60)  # seconds
         
         # Streaming statistics (Welford algorithm)
@@ -256,16 +256,101 @@ class OnChainWhaleTracker:
     
     def _fetch_large_transactions(self) -> List[Dict]:
         """
-        Fetch large transactions from CryptoQuant or Whale Alert.
+        Fetch large transactions from Blockchain.com and Dune Analytics.
         
         Returns:
             List of transaction dicts with 'direction' and 'value' keys
         """
-        # TODO: Implement CryptoQuant integration
-        # TODO: Implement Whale Alert integration (paid tier)
+        transactions = []
         
-        # For now, return empty list (will be filled in Phase 1b)
+        # Fetch from Dune Analytics (on-chain whale movements)
+        dune_txs = self._fetch_dune_whale_transactions()
+        if dune_txs:
+            transactions.extend(dune_txs)
+        
+        # Fetch from Blockchain.com (Bitcoin-specific)
+        blockchain_txs = self._fetch_blockchain_large_txs()
+        if blockchain_txs:
+            transactions.extend(blockchain_txs)
+        
+        return transactions
+    
+    def _fetch_dune_whale_transactions(self) -> List[Dict]:
+        """
+        Fetch whale transactions from Dune Analytics API.
+        
+        Uses Dune's query API to get large recent transactions.
+        """
+        dune_key = os.getenv('DUNE_API_KEY', 'barQKj36basZqbg59tEzbc5vDmN021er')
+        
+        # Dune API endpoint for query execution
+        # Note: You'd need to create a query on Dune first and get its query_id
+        # For now, return empty list - will be implemented once query is created
+        
+        try:
+            # TODO: Create Dune query for large transactions and use query_id
+            # query_id = "your_query_id"
+            # url = f"https://api.dune.com/api/v1/query/{query_id}/results"
+            # headers = {"X-Dune-API-Key": dune_key}
+            # response = requests.get(url, headers=headers, timeout=10)
+            # if response.status_code == 200:
+            #     return self._parse_dune_response(response.json())
+            pass
+        except Exception as e:
+            logger.error(f"Dune API error: {e}")
+        
         return []
+    
+    def _fetch_blockchain_large_txs(self) -> List[Dict]:
+        """
+        Fetch large Bitcoin transactions from Blockchain.com API.
+        
+        Uses the public Blockchain.com API (no key required).
+        """
+        try:
+            # Get latest blocks
+            url = "https://blockchain.info/latestblock"
+            response = requests.get(url, timeout=10)
+            
+            if response.status_code != 200:
+                return []
+            
+            latest_block = response.json()
+            block_height = latest_block.get('height')
+            
+            if not block_height:
+                return []
+            
+            # Get recent blocks (last 6 blocks ≈ 1 hour)
+            transactions = []
+            for i in range(6):
+                block_url = f"https://blockchain.info/rawblock/{block_height - i}"
+                block_response = requests.get(block_url, timeout=10)
+                
+                if block_response.status_code == 200:
+                    block_data = block_response.json()
+                    
+                    # Extract large transactions (> 10 BTC)
+                    for tx in block_data.get('tx', []):
+                        total_output = sum(out.get('value', 0) for out in tx.get('out', []))
+                        total_btc = total_output / 1e8  # Convert satoshis to BTC
+                        
+                        if total_btc > 10:  # Large transaction threshold
+                            # Determine direction by checking output addresses
+                            # If output goes to known exchange address, it's an inflow
+                            # This is simplified - would need exchange address database
+                            transactions.append({
+                                'hash': tx.get('hash'),
+                                'value': total_btc,
+                                'direction': 'unknown',  # TODO: Add exchange address detection
+                                'timestamp': tx.get('time', 0),
+                            })
+            
+            return transactions[:10]  # Return top 10 large transactions
+        
+        except Exception as e:
+            logger.error(f"Blockchain.com API error: {e}")
+            return []
     
     def _update_welford(self, value: float) -> None:
         """
@@ -322,20 +407,20 @@ class OnChainWhaleTracker:
 
 
 def create_whale_tracker(santiment_key: Optional[str] = None, 
-                        cryptoquant_key: Optional[str] = None) -> OnChainWhaleTracker:
+                        dune_key: Optional[str] = None) -> OnChainWhaleTracker:
     """
     Factory function to create OnChainWhaleTracker instance.
     
     Args:
         santiment_key: Santiment API key (uses env var if not provided)
-        cryptoquant_key: CryptoQuant API key (uses env var if not provided)
+        dune_key: Dune Analytics API key (uses env var if not provided)
         
     Returns:
         Configured OnChainWhaleTracker instance
     """
     config = {
         'santiment_api_key': santiment_key,
-        'cryptoquant_api_key': cryptoquant_key,
+        'dune_api_key': dune_key,
         'update_interval': 60,
     }
     return OnChainWhaleTracker(config)
