@@ -77,6 +77,7 @@ class OnChainWhaleTracker:
         """
         self.santiment_key = config.get('santiment_api_key') or os.getenv('SANTIMENT_API_KEY')
         self.dune_key = config.get('dune_api_key') or os.getenv('DUNE_API_KEY', 'barQKj36basZqbg59tEzbc5vDmN021er')
+        self.etherscan_key = config.get('etherscan_api_key') or os.getenv('ETHERSCAN_API_KEY', 'X3NUGJTD8MIW3K8UCSM8T4TT6CE71AYPIK')
         self.update_interval = config.get('update_interval', 60)  # seconds
         
         # Streaming statistics (Welford algorithm)
