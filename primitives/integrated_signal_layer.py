@@ -170,7 +170,7 @@ class IntegratedSignalLayer:
             else:
                 logger.warning("Sentiment requested but torch/transformers not available")
         
-        # Register signals with fusion
+        # Register signals with fusion (after all components initialized)
         if self.fusion:
             self._register_signals()
         
@@ -188,14 +188,28 @@ class IntegratedSignalLayer:
         self.fusion.register_signal('momentum_5', 'momentum', base_weight=1.0)
         self.fusion.register_signal('momentum_21', 'trend_following', base_weight=1.2)
         self.fusion.register_signal('momentum_63', 'trend_following', base_weight=1.5)
-        
+
         # OBI signal
         self.fusion.register_signal('obi_normalized', 'volume', base_weight=1.5)
-        
+
         # Mean reversion from RSI
         self.fusion.register_signal('rsi_signal', 'mean_reversion', base_weight=1.0)
-        
-        logger.debug("Registered 5 signals with fusion layer")
+
+        # ENHANCEMENT 1: Sentiment signals (register even if lag buffer not initialized yet)
+        if self.sentiment:
+            self.fusion.register_signal('sentiment_current', 'sentiment', base_weight=1.0)
+            if self.sentiment.lag_buffer:
+                self.fusion.register_signal('news_lag_30m', 'sentiment', base_weight=0.8)
+                self.fusion.register_signal('news_lag_60m', 'sentiment', base_weight=0.7)
+                self.fusion.register_signal('news_lag_90m', 'sentiment', base_weight=0.6)
+                self.fusion.register_signal('news_lag_120m', 'sentiment', base_weight=0.5)
+                self.fusion.register_signal('news_lag_180m', 'sentiment', base_weight=0.4)
+                self.fusion.register_signal('sentiment_acceleration', 'sentiment', base_weight=0.9)
+                logger.debug("Registered sentiment lag signals")
+            else:
+                logger.debug("Registered sentiment signal (no lag features)")
+
+        logger.debug("Registered signals with fusion layer")
     
     def update(self, 
                symbol: str,
@@ -264,12 +278,51 @@ class IntegratedSignalLayer:
         # 5. Update Welford stats with return
         if price_return is not None:
             self.welford.update(price_return)
-        
-        # 6. Fuse signals with regime-aware weighting
-        composite_signal = 0.0
+
+        # 6. Get regime info for sentiment
         regime = 'Range'
         regime_conf = 0.33
-        
+        if self.hmm:
+            regime = self.hmm.get_regime_label()
+            regime_conf = float(self.hmm.state_probs.max())
+
+        # 7. ENHANCEMENT: Process sentiment with regime context and lag features
+        if self.sentiment and sentiment_texts:
+            # Get ATR for volatility regime classification
+            atr = ind_values.get('atr', 0.025) if self.indicators and ind_values else 0.025
+
+            # Construct regime context for dynamic weighting
+            regime_context = {
+                'atr': atr,
+                'social_zscore': 0.0,  # TODO: Add social volume tracking
+                'market_regime': regime
+            }
+
+            # Analyze sentiment with regime context
+            for text in sentiment_texts:
+                sentiment_result = self.sentiment.analyze(
+                    text,
+                    regime_context=regime_context,
+                    symbol=symbol,
+                    source='news'
+                )
+
+                # Add current sentiment to components
+                components['sentiment_current'] = sentiment_result['score']
+
+                # ENHANCEMENT 1: Add lag features to components
+                if 'lag_features' in sentiment_result:
+                    for lag_name, lag_value in sentiment_result['lag_features'].items():
+                        if lag_value != 0.0:  # Only add if buffer has sufficient data
+                            components[lag_name] = lag_value
+
+                # Log dynamic weights used (for monitoring)
+                if 'weights_used' in sentiment_result:
+                    logger.debug(f"Sentiment weights: {sentiment_result['weights_used']}")
+
+        # 8. Fuse signals with regime-aware weighting
+        composite_signal = 0.0
+
         if self.fusion and components:
             fusion_result = self.fusion.fuse(components, price_return)
             composite_signal = fusion_result['composite']
@@ -279,7 +332,7 @@ class IntegratedSignalLayer:
             # Fallback: simple average if fusion disabled
             composite_signal = sum(components.values()) / len(components)
         
-        # 7. Get SRM risk score and apply gating
+        # 9. Get SRM risk score and apply gating
         srm_score, srm_action = self._get_srm_risk(symbol)
         position_mult = self._apply_srm_gating(composite_signal, srm_score)
         
