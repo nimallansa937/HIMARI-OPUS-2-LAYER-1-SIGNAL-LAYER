@@ -247,3 +247,40 @@ __all__.extend([
     'create_phase3_analyzer',
     'is_multi_model_available',
 ])
+
+# On-Chain Analytics Primitives (NEW)
+try:
+    from .onchain_whale_tracker import OnChainWhaleTracker, create_whale_tracker
+    from .onchain_network_health import OnChainNetworkHealth, create_network_health
+    from .enhanced_cascade_detector import EnhancedCascadeDetector
+    _ONCHAIN_AVAILABLE = True
+except ImportError:
+    _ONCHAIN_AVAILABLE = False
+    OnChainWhaleTracker = None
+    create_whale_tracker = None
+    OnChainNetworkHealth = None
+    create_network_health = None
+    EnhancedCascadeDetector = None
+
+
+def is_onchain_available() -> bool:
+    """Check if on-chain analytics primitives are available."""
+    return _ONCHAIN_AVAILABLE
+
+
+# Extended exports for on-chain analytics
+__all__.extend([
+    # On-Chain Whale Tracking
+    'OnChainWhaleTracker',
+    'create_whale_tracker',
+    
+    # On-Chain Network Health
+    'OnChainNetworkHealth',
+    'create_network_health',
+    
+    # Cascade Detection
+    'EnhancedCascadeDetector',
+    
+    # Availability check
+    'is_onchain_available',
+])
