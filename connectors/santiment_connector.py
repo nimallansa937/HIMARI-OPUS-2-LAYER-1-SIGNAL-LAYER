@@ -224,9 +224,9 @@ class SantimentConnector:
             if age < cache_ttl:
                 return self._cache[cache_key]
         
-        # Build GraphQL query
-        from_date = (datetime.utcnow() - timedelta(days=days)).isoformat()
-        to_date = datetime.utcnow().isoformat()
+        # Build GraphQL query (Santiment requires ISO format with Z suffix)
+        from_date = (datetime.utcnow() - timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        to_date = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
         
         query = """
         query GetSocialSentiment($slug: String!, $from: DateTime!, $to: DateTime!) {
@@ -326,8 +326,8 @@ class SantimentConnector:
         """
         slug = self._get_slug(symbol)
         
-        from_date = (datetime.utcnow() - timedelta(days=days)).isoformat()
-        to_date = datetime.utcnow().isoformat()
+        from_date = (datetime.utcnow() - timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        to_date = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
         
         results = {}
         
