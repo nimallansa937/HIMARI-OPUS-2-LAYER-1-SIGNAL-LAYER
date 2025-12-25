@@ -101,7 +101,7 @@ class CryptoPanicConnector:
         print(f"Bullish: {results['bullish_pct']:.0%}")
     """
     
-    BASE_URL = "https://cryptopanic.com/api/v1"
+    BASE_URL = "https://cryptopanic.com/api/developer/v2"  # Developer plan endpoint
     
     def __init__(
         self,
@@ -117,6 +117,7 @@ class CryptoPanicConnector:
         """
         self.api_key = api_key or os.getenv("CRYPTOPANIC_API_KEY")
         self.enable_sentiment_analysis = enable_sentiment_analysis
+        self.public = True  # Use public API mode
         
         if not self.api_key:
             logger.warning(
@@ -177,6 +178,7 @@ class CryptoPanicConnector:
         url = f"{self.BASE_URL}/{endpoint}"
         params = params or {}
         params["auth_token"] = self.api_key
+        params["public"] = "true"  # Required for free tier
         
         try:
             response = requests.get(url, params=params, timeout=10)
