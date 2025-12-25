@@ -1,0 +1,607 @@
+{
+    "annotations": {
+        "list": []
+    },
+    "editable": true,
+    "fiscalYearStartMonth": 0,
+    "graphTooltip": 0,
+    "id": null,
+    "links": [],
+    "liveNow": false,
+    "panels": [
+        {
+            "title": "🎯 Signal Layer Overview",
+            "type": "row",
+            "gridPos": {
+                "h": 1,
+                "w": 24,
+                "x": 0,
+                "y": 0
+            }
+        },
+        {
+            "title": "Throughput (req/s)",
+            "type": "stat",
+            "gridPos": {
+                "h": 4,
+                "w": 4,
+                "x": 0,
+                "y": 1
+            },
+            "targets": [
+                {
+                    "expr": "rate(himari_requests_total[1m])",
+                    "legendFormat": "req/s"
+                }
+            ],
+            "options": {
+                "colorMode": "value",
+                "graphMode": "area"
+            },
+            "fieldConfig": {
+                "defaults": {
+                    "unit": "reqps",
+                    "thresholds": {
+                        "mode": "absolute",
+                        "steps": [
+                            {
+                                "color": "green",
+                                "value": null
+                            },
+                            {
+                                "color": "yellow",
+                                "value": 100
+                            },
+                            {
+                                "color": "red",
+                                "value": 500
+                            }
+                        ]
+                    }
+                }
+            }
+        },
+        {
+            "title": "P99 Latency",
+            "type": "stat",
+            "gridPos": {
+                "h": 4,
+                "w": 4,
+                "x": 4,
+                "y": 1
+            },
+            "targets": [
+                {
+                    "expr": "histogram_quantile(0.99, rate(himari_latency_seconds_bucket[5m])) * 1000",
+                    "legendFormat": "p99"
+                }
+            ],
+            "fieldConfig": {
+                "defaults": {
+                    "unit": "ms",
+                    "thresholds": {
+                        "mode": "absolute",
+                        "steps": [
+                            {
+                                "color": "green",
+                                "value": null
+                            },
+                            {
+                                "color": "yellow",
+                                "value": 10
+                            },
+                            {
+                                "color": "red",
+                                "value": 25
+                            }
+                        ]
+                    }
+                }
+            }
+        },
+        {
+            "title": "Error Rate",
+            "type": "stat",
+            "gridPos": {
+                "h": 4,
+                "w": 4,
+                "x": 8,
+                "y": 1
+            },
+            "targets": [
+                {
+                    "expr": "rate(himari_errors_total[5m]) / rate(himari_requests_total[5m]) * 100",
+                    "legendFormat": "error %"
+                }
+            ],
+            "fieldConfig": {
+                "defaults": {
+                    "unit": "percent",
+                    "thresholds": {
+                        "mode": "absolute",
+                        "steps": [
+                            {
+                                "color": "green",
+                                "value": null
+                            },
+                            {
+                                "color": "yellow",
+                                "value": 1
+                            },
+                            {
+                                "color": "red",
+                                "value": 5
+                            }
+                        ]
+                    }
+                }
+            }
+        },
+        {
+            "title": "Rollout Phase",
+            "type": "stat",
+            "gridPos": {
+                "h": 4,
+                "w": 4,
+                "x": 12,
+                "y": 1
+            },
+            "targets": [
+                {
+                    "expr": "himari_rollout_phase",
+                    "legendFormat": "phase"
+                }
+            ],
+            "fieldConfig": {
+                "defaults": {
+                    "mappings": [
+                        {
+                            "type": "value",
+                            "options": {
+                                "0": {
+                                    "text": "NOT STARTED"
+                                }
+                            }
+                        },
+                        {
+                            "type": "value",
+                            "options": {
+                                "1": {
+                                    "text": "PHASE 1: BTC"
+                                }
+                            }
+                        },
+                        {
+                            "type": "value",
+                            "options": {
+                                "2": {
+                                    "text": "PHASE 2: ETH"
+                                }
+                            }
+                        },
+                        {
+                            "type": "value",
+                            "options": {
+                                "3": {
+                                    "text": "PHASE 3: MAJORS"
+                                }
+                            }
+                        },
+                        {
+                            "type": "value",
+                            "options": {
+                                "4": {
+                                    "text": "PHASE 4: FULL"
+                                }
+                            }
+                        }
+                    ]
+                }
+            }
+        },
+        {
+            "title": "Enabled Symbols",
+            "type": "stat",
+            "gridPos": {
+                "h": 4,
+                "w": 4,
+                "x": 16,
+                "y": 1
+            },
+            "targets": [
+                {
+                    "expr": "count(himari_symbol_enabled == 1)",
+                    "legendFormat": "symbols"
+                }
+            ]
+        },
+        {
+            "title": "Active Alerts",
+            "type": "stat",
+            "gridPos": {
+                "h": 4,
+                "w": 4,
+                "x": 20,
+                "y": 1
+            },
+            "targets": [
+                {
+                    "expr": "ALERTS{alertstate=\"firing\"}",
+                    "legendFormat": "alerts"
+                }
+            ],
+            "fieldConfig": {
+                "defaults": {
+                    "thresholds": {
+                        "mode": "absolute",
+                        "steps": [
+                            {
+                                "color": "green",
+                                "value": null
+                            },
+                            {
+                                "color": "yellow",
+                                "value": 1
+                            },
+                            {
+                                "color": "red",
+                                "value": 3
+                            }
+                        ]
+                    }
+                }
+            }
+        },
+        {
+            "title": "📈 Latency Distribution",
+            "type": "row",
+            "gridPos": {
+                "h": 1,
+                "w": 24,
+                "x": 0,
+                "y": 5
+            }
+        },
+        {
+            "title": "Latency Percentiles Over Time",
+            "type": "timeseries",
+            "gridPos": {
+                "h": 8,
+                "w": 12,
+                "x": 0,
+                "y": 6
+            },
+            "targets": [
+                {
+                    "expr": "histogram_quantile(0.50, rate(himari_latency_seconds_bucket[5m])) * 1000",
+                    "legendFormat": "p50"
+                },
+                {
+                    "expr": "histogram_quantile(0.95, rate(himari_latency_seconds_bucket[5m])) * 1000",
+                    "legendFormat": "p95"
+                },
+                {
+                    "expr": "histogram_quantile(0.99, rate(himari_latency_seconds_bucket[5m])) * 1000",
+                    "legendFormat": "p99"
+                }
+            ],
+            "fieldConfig": {
+                "defaults": {
+                    "unit": "ms",
+                    "custom": {
+                        "lineWidth": 2,
+                        "fillOpacity": 10
+                    }
+                }
+            }
+        },
+        {
+            "title": "Latency by Component",
+            "type": "timeseries",
+            "gridPos": {
+                "h": 8,
+                "w": 12,
+                "x": 12,
+                "y": 6
+            },
+            "targets": [
+                {
+                    "expr": "histogram_quantile(0.95, rate(himari_latency_seconds_bucket{component=\"sentiment\"}[5m])) * 1000",
+                    "legendFormat": "Sentiment"
+                },
+                {
+                    "expr": "histogram_quantile(0.95, rate(himari_latency_seconds_bucket{component=\"hmm\"}[5m])) * 1000",
+                    "legendFormat": "HMM"
+                },
+                {
+                    "expr": "histogram_quantile(0.95, rate(himari_latency_seconds_bucket{component=\"fusion\"}[5m])) * 1000",
+                    "legendFormat": "Fusion"
+                }
+            ],
+            "fieldConfig": {
+                "defaults": {
+                    "unit": "ms"
+                }
+            }
+        },
+        {
+            "title": "🧠 Sentiment Analysis",
+            "type": "row",
+            "gridPos": {
+                "h": 1,
+                "w": 24,
+                "x": 0,
+                "y": 14
+            }
+        },
+        {
+            "title": "Sentiment Score Distribution",
+            "type": "histogram",
+            "gridPos": {
+                "h": 8,
+                "w": 8,
+                "x": 0,
+                "y": 15
+            },
+            "targets": [
+                {
+                    "expr": "himari_sentiment_score",
+                    "legendFormat": "sentiment"
+                }
+            ]
+        },
+        {
+            "title": "Sentiment by Symbol",
+            "type": "timeseries",
+            "gridPos": {
+                "h": 8,
+                "w": 8,
+                "x": 8,
+                "y": 15
+            },
+            "targets": [
+                {
+                    "expr": "himari_sentiment_score{symbol=~\"BTC.*\"}",
+                    "legendFormat": "BTC"
+                },
+                {
+                    "expr": "himari_sentiment_score{symbol=~\"ETH.*\"}",
+                    "legendFormat": "ETH"
+                }
+            ]
+        },
+        {
+            "title": "Regime Distribution",
+            "type": "piechart",
+            "gridPos": {
+                "h": 8,
+                "w": 8,
+                "x": 16,
+                "y": 15
+            },
+            "targets": [
+                {
+                    "expr": "count(himari_regime == 0)",
+                    "legendFormat": "BULL"
+                },
+                {
+                    "expr": "count(himari_regime == 1)",
+                    "legendFormat": "BEAR"
+                },
+                {
+                    "expr": "count(himari_regime == 2)",
+                    "legendFormat": "RANGE"
+                }
+            ]
+        },
+        {
+            "title": "🔄 Shadow Mode Comparison",
+            "type": "row",
+            "gridPos": {
+                "h": 1,
+                "w": 24,
+                "x": 0,
+                "y": 23
+            }
+        },
+        {
+            "title": "Signal Divergence",
+            "type": "timeseries",
+            "gridPos": {
+                "h": 8,
+                "w": 12,
+                "x": 0,
+                "y": 24
+            },
+            "targets": [
+                {
+                    "expr": "himari_shadow_signal_divergence",
+                    "legendFormat": "{{symbol}}"
+                }
+            ],
+            "fieldConfig": {
+                "defaults": {
+                    "unit": "percentunit",
+                    "thresholds": {
+                        "mode": "absolute",
+                        "steps": [
+                            {
+                                "color": "green",
+                                "value": null
+                            },
+                            {
+                                "color": "yellow",
+                                "value": 0.1
+                            },
+                            {
+                                "color": "red",
+                                "value": 0.2
+                            }
+                        ]
+                    }
+                }
+            }
+        },
+        {
+            "title": "Regime Match Rate",
+            "type": "gauge",
+            "gridPos": {
+                "h": 8,
+                "w": 6,
+                "x": 12,
+                "y": 24
+            },
+            "targets": [
+                {
+                    "expr": "himari_shadow_regime_match_rate",
+                    "legendFormat": "match rate"
+                }
+            ],
+            "fieldConfig": {
+                "defaults": {
+                    "unit": "percentunit",
+                    "min": 0,
+                    "max": 1,
+                    "thresholds": {
+                        "mode": "absolute",
+                        "steps": [
+                            {
+                                "color": "red",
+                                "value": null
+                            },
+                            {
+                                "color": "yellow",
+                                "value": 0.85
+                            },
+                            {
+                                "color": "green",
+                                "value": 0.95
+                            }
+                        ]
+                    }
+                }
+            }
+        },
+        {
+            "title": "Latency Comparison",
+            "type": "timeseries",
+            "gridPos": {
+                "h": 8,
+                "w": 6,
+                "x": 18,
+                "y": 24
+            },
+            "targets": [
+                {
+                    "expr": "himari_shadow_latency_legacy_ms",
+                    "legendFormat": "Legacy"
+                },
+                {
+                    "expr": "himari_shadow_latency_enhanced_ms",
+                    "legendFormat": "Enhanced"
+                }
+            ],
+            "fieldConfig": {
+                "defaults": {
+                    "unit": "ms"
+                }
+            }
+        },
+        {
+            "title": "🚀 Rollout Progress",
+            "type": "row",
+            "gridPos": {
+                "h": 1,
+                "w": 24,
+                "x": 0,
+                "y": 32
+            }
+        },
+        {
+            "title": "Rollout Timeline",
+            "type": "state-timeline",
+            "gridPos": {
+                "h": 6,
+                "w": 24,
+                "x": 0,
+                "y": 33
+            },
+            "targets": [
+                {
+                    "expr": "himari_rollout_phase",
+                    "legendFormat": "Phase"
+                }
+            ]
+        },
+        {
+            "title": "Phase Metrics",
+            "type": "table",
+            "gridPos": {
+                "h": 8,
+                "w": 12,
+                "x": 0,
+                "y": 39
+            },
+            "targets": [
+                {
+                    "expr": "himari_rollout_comparisons",
+                    "legendFormat": "Comparisons"
+                },
+                {
+                    "expr": "himari_rollout_signal_diff",
+                    "legendFormat": "Avg Signal Diff"
+                },
+                {
+                    "expr": "himari_rollout_regime_match",
+                    "legendFormat": "Regime Match %"
+                }
+            ]
+        },
+        {
+            "title": "Rollback History",
+            "type": "logs",
+            "gridPos": {
+                "h": 8,
+                "w": 12,
+                "x": 12,
+                "y": 39
+            },
+            "targets": [
+                {
+                    "expr": "{job=\"himari-rollback\"}",
+                    "legendFormat": ""
+                }
+            ]
+        }
+    ],
+    "refresh": "5s",
+    "schemaVersion": 38,
+    "style": "dark",
+    "tags": [
+        "himari",
+        "signal-layer",
+        "trading"
+    ],
+    "templating": {
+        "list": [
+            {
+                "name": "symbol",
+                "type": "query",
+                "query": "label_values(himari_requests_total, symbol)",
+                "refresh": 2,
+                "multi": true,
+                "includeAll": true
+            }
+        ]
+    },
+    "time": {
+        "from": "now-1h",
+        "to": "now"
+    },
+    "timepicker": {},
+    "timezone": "browser",
+    "title": "HIMARI Signal Layer - Production Dashboard",
+    "uid": "himari-signal-layer",
+    "version": 1,
+    "weekStart": ""
+}

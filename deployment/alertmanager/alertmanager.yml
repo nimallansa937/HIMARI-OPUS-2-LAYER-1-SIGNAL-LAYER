@@ -1,0 +1,71 @@
+# Alertmanager Configuration for HIMARI
+
+global:
+  resolve_timeout: 5m
+  smtp_smarthost: "smtp.gmail.com:587"
+  smtp_from: "himari-alerts@example.com"
+  smtp_auth_username: "${SMTP_USER}"
+  smtp_auth_password: "${SMTP_PASSWORD}"
+
+# Route tree
+route:
+  group_by: ["alertname", "severity"]
+  group_wait: 10s
+  group_interval: 5m
+  repeat_interval: 4h
+  receiver: "default-receiver"
+  routes:
+    # Critical alerts - immediate notification
+    - match:
+        severity: critical
+      receiver: "critical-receiver"
+      group_wait: 0s
+      repeat_interval: 1h
+
+    # Warning alerts - batched
+    - match:
+        severity: warning
+      receiver: "warning-receiver"
+      group_wait: 30s
+      repeat_interval: 4h
+
+    # Info alerts - daily digest
+    - match:
+        severity: info
+      receiver: "info-receiver"
+      group_wait: 5m
+      repeat_interval: 24h
+
+# Receivers
+receivers:
+  - name: "default-receiver"
+    email_configs:
+      - to: "team@example.com"
+
+  - name: "critical-receiver"
+    email_configs:
+      - to: "oncall@example.com"
+        send_resolved: true
+    # Add Slack/PagerDuty for production
+    # slack_configs:
+    #   - api_url: '${SLACK_WEBHOOK_URL}'
+    #     channel: '#alerts-critical'
+
+  - name: "warning-receiver"
+    email_configs:
+      - to: "team@example.com"
+        send_resolved: true
+
+  - name: "info-receiver"
+    email_configs:
+      - to: "team@example.com"
+        send_resolved: false
+
+# Inhibition rules
+inhibit_rules:
+  # If critical is firing, suppress warning for same alert
+  - source_match:
+      severity: "critical"
+    target_match:
+      severity: "warning"
+    equal: ["alertname"]

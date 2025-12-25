@@ -1,0 +1,51 @@
+# Prometheus Configuration for HIMARI Signal Layer
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    monitor: "himari-signal-layer"
+
+# Alerting configuration
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+            - alertmanager:9093
+
+# Alert rules
+rule_files:
+  - /etc/prometheus/rules/*.yml
+
+# Scrape configurations
+scrape_configs:
+  # Prometheus self-monitoring
+  - job_name: "prometheus"
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  # HIMARI Signal Layer Application
+  - job_name: "himari-signal-layer"
+    static_configs:
+      - targets: ["host.docker.internal:8000"]
+    metrics_path: /metrics
+    scrape_interval: 5s # Higher frequency for trading metrics
+
+  # Node Exporter (Host metrics)
+  - job_name: "node"
+    static_configs:
+      - targets: ["node-exporter:9100"]
+
+  # Redis Exporter
+  - job_name: "redis"
+    static_configs:
+      - targets: ["redis-exporter:9121"]
+
+  # Additional HIMARI services (if deployed)
+  - job_name: "himari-services"
+    static_configs:
+      - targets:
+          - "host.docker.internal:8001" # Shadow mode runner
+          - "host.docker.internal:8002" # Rollout controller
+    metrics_path: /metrics
+    scrape_interval: 10s
