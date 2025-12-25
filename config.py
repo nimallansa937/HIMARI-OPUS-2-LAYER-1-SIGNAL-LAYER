@@ -291,6 +291,44 @@ class EnhancedSignalConfig:
     sentiment_model: str = "ProsusAI/finbert"
     sentiment_batch_size: int = 32
     
+    # ===== Enhancement 1: Sentiment Lag Features =====
+    sentiment_enable_lag_features: bool = True
+    sentiment_max_lag_bars: int = 360  # 6 hours at 1-minute bars
+    sentiment_bar_interval_minutes: int = 1
+    
+    # ===== Enhancement 2: Dynamic Weighting =====
+    sentiment_enable_dynamic_weighting: bool = True
+    sentiment_weight_smoothing_alpha: float = 0.1
+    sentiment_min_regime_duration: int = 5
+    sentiment_weight_change_limit: float = 0.15
+    volatility_threshold_low: float = 0.015
+    volatility_threshold_high: float = 0.040
+    
+    # ===== Enhancement 3: Latency Validation =====
+    enable_latency_gating: bool = True
+    latency_check_interval: int = 100
+    latency_p99_sentiment: float = 100.0  # ms
+    latency_p99_total: float = 50.0  # ms
+    
+    # ===== Enhancement 4: Fine-Tuning =====
+    sentiment_use_fine_tuned: bool = False
+    sentiment_fine_tuned_model_path: str = "./models/finbert-crypto-finetuned"
+    
+    # ===== Enhancement 5: Social Media =====
+    enable_social_sentiment: bool = False
+    twitter_model: str = "cardiffnlp/twitter-roberta-base-sentiment-latest"
+    social_spam_filter_enabled: bool = True
+    social_min_engagement: int = 5
+    
+    # ===== Enhancement 6: Monitoring =====
+    enable_prometheus_metrics: bool = False
+    prometheus_port: int = 8000
+    metrics_update_interval: int = 100
+    
+    # ===== Enhancement 7: Multi-Asset =====
+    enable_multi_asset: bool = False
+    max_concurrent_models: int = 3
+    
     # ===== SRM Integration (Enhanced) =====
     srm_reduce_threshold: float = 0.5
     srm_close_only_threshold: float = 0.7

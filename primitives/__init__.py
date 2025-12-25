@@ -12,7 +12,6 @@ from .order_book_imbalance import OrderBookImbalance, OBIConfig
 from .regime_fusion import RegimeAwareSignalFusion, FusionConfig, SignalDefinition, SignalCategory
 
 # Lazy import for sentiment (optional - requires torch/transformers)
-# Use get_hybrid_sentiment() to access when needed
 try:
     from .hybrid_sentiment import HybridSentimentAnalyzer, HybridSentimentConfig, CRYPTO_LEXICON
     _SENTIMENT_AVAILABLE = True
@@ -25,6 +24,17 @@ except (ImportError, OSError) as e:
     CRYPTO_LEXICON = {}
 
 from .integrated_signal_layer import IntegratedSignalLayer, IntegratedSignalOutput
+
+# Enhancement 1: Sentiment Lag Features
+from .sentiment_lag_buffer import SentimentLagBuffer, LagConfig
+
+# Enhancement 2: Dynamic Regime-Based Weighting
+from .dynamic_sentiment_weights import (
+    DynamicSentimentWeighter, 
+    DynamicWeightConfig,
+    VolatilityRegime,
+    SocialRegime
+)
 
 
 def is_sentiment_available() -> bool:
@@ -70,4 +80,14 @@ __all__ = [
     # Integrated Layer (Complete System)
     'IntegratedSignalLayer',
     'IntegratedSignalOutput',
+    
+    # Enhancement 1: Sentiment Lag Features
+    'SentimentLagBuffer',
+    'LagConfig',
+    
+    # Enhancement 2: Dynamic Weighting
+    'DynamicSentimentWeighter',
+    'DynamicWeightConfig',
+    'VolatilityRegime',
+    'SocialRegime',
 ]
