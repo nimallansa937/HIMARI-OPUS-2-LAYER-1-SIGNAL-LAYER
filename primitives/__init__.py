@@ -195,3 +195,55 @@ try:
 except ImportError:
     SourceCredibilityTracker = None
 
+# Multi-Model Sentiment Ensemble (Phase 1-3)
+try:
+    from .multi_model_sentiment import (
+        MultiModelSentimentAnalyzer,
+        EnsembleConfig,
+        EnsembleResult,
+        ModelPrediction,
+        ModelType,
+        ModelConfig,
+        MODEL_REGISTRY,
+        LABEL_MAPS,
+        create_phase1_analyzer,
+        create_phase2_analyzer,
+        create_phase3_analyzer,
+    )
+    _MULTI_MODEL_AVAILABLE = True
+except ImportError:
+    _MULTI_MODEL_AVAILABLE = False
+    MultiModelSentimentAnalyzer = None
+    EnsembleConfig = None
+    EnsembleResult = None
+    ModelPrediction = None
+    ModelType = None
+    ModelConfig = None
+    MODEL_REGISTRY = None
+    LABEL_MAPS = None
+    create_phase1_analyzer = None
+    create_phase2_analyzer = None
+    create_phase3_analyzer = None
+
+
+def is_multi_model_available() -> bool:
+    """Check if multi-model sentiment analyzer is available."""
+    return _MULTI_MODEL_AVAILABLE
+
+
+# Extended exports
+__all__.extend([
+    # Multi-Model Sentiment
+    'MultiModelSentimentAnalyzer',
+    'EnsembleConfig',
+    'EnsembleResult',
+    'ModelPrediction',
+    'ModelType',
+    'ModelConfig',
+    'MODEL_REGISTRY',
+    'LABEL_MAPS',
+    'create_phase1_analyzer',
+    'create_phase2_analyzer',
+    'create_phase3_analyzer',
+    'is_multi_model_available',
+])
