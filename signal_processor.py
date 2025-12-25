@@ -228,6 +228,9 @@ class SignalProcessor:
         else:
             logger.info("Using legacy signal system (Enhanced Layer 1 disabled)")
         
+        # === On-Chain Analytics Integration (NEW) ===
+        self._init_onchain_primitives()
+        
         # Setup graceful shutdown
         signal.signal(signal.SIGINT, self._shutdown_handler)
         signal.signal(signal.SIGTERM, self._shutdown_handler)
@@ -532,6 +535,136 @@ class SignalProcessor:
                 logger.error(f"Sentiment consumer error: {e}")
                 time.sleep(1)
         logger.info("Sentiment consumer stopped")
+    
+    def _init_onchain_primitives(self) -> None:
+        """
+        Initialize on-chain analytics primitives.
+        
+        Sets up WhaleTracker, NetworkHealth, and CascadeDetector for
+        production on-chain signal publishing.
+        """
+        from primitives import (
+            OnChainWhaleTracker, 
+            OnChainNetworkHealth, 
+            EnhancedCascadeDetector,
+            is_onchain_available
+        )
+        
+        self._whale_tracker = None
+        self._network_health = None
+        self._cascade_detector = None
+        self._onchain_last_update = 0
+        
+        if is_onchain_available():
+            try:
+                onchain_config = {
+                    'santiment_api_key': os.getenv('SANTIMENT_API_KEY'),
+                    'dune_api_key': os.getenv('DUNE_API_KEY'),
+                    'etherscan_api_key': os.getenv('ETHERSCAN_API_KEY'),
+                    'update_interval': 60,
+                }
+                self._whale_tracker = OnChainWhaleTracker(onchain_config)
+                self._network_health = OnChainNetworkHealth(onchain_config)
+                self._cascade_detector = EnhancedCascadeDetector()
+                
+                self._metrics['onchain_enabled'] = True
+                self._metrics['onchain_signals_published'] = 0
+                self._metrics['onchain_cascade_warnings'] = 0
+                
+                logger.info("✅ On-Chain Analytics ENABLED")
+                logger.info("   WhaleTracker: Bitcoin + Ethereum")
+                logger.info("   NetworkHealth: Hash rate + Gas")
+                logger.info("   CascadeDetector: 2-4min early warning")
+            except Exception as e:
+                logger.warning(f"On-chain initialization failed: {e}")
+                self._metrics['onchain_enabled'] = False
+        else:
+            self._metrics['onchain_enabled'] = False
+            logger.info("On-chain analytics not available")
+    
+    def publish_onchain_signals(self, symbol: str = 'BTCUSDT') -> None:
+        """
+        Fetch on-chain signals and publish to Redis.
+        
+        Called every 60 seconds from the main run loop.
+        Production mode - no 'shadow:' prefix.
+        
+        Args:
+            symbol: Trading symbol for Redis key namespace
+        """
+        if not self._whale_tracker:
+            return
+        
+        current_ts = int(time.time())
+        
+        # Only update every 60 seconds
+        if current_ts - self._onchain_last_update < 60:
+            return
+        
+        try:
+            # === WHALE ACTIVITY SIGNALS ===
+            whale_signals = self._whale_tracker.update(current_ts)
+            
+            redis_data = {
+                f'onchain:{symbol}:exchange_netflow': whale_signals.get('exchange_netflow', 0),
+                f'onchain:{symbol}:netflow_zscore': whale_signals.get('exchange_netflow_zscore', 0),
+                f'onchain:{symbol}:whale_pressure': whale_signals.get('whale_pressure', 0),
+                f'onchain:{symbol}:large_tx_count': whale_signals.get('large_tx_count_5min', 0),
+                f'onchain:{symbol}:concentration_risk': whale_signals.get('concentration_risk', 0),
+            }
+            
+            # === NETWORK HEALTH SIGNALS ===
+            if self._network_health:
+                health_signals = self._network_health.update(current_ts)
+                
+                redis_data.update({
+                    f'onchain:{symbol}:active_addresses_zscore': health_signals.get('active_addresses_zscore', 0),
+                    f'onchain:{symbol}:hash_rate_health': health_signals.get('hash_rate_health', 1.0),
+                    f'onchain:{symbol}:fee_pressure': health_signals.get('fee_pressure', 0),
+                    f'onchain:{symbol}:holder_conviction': health_signals.get('holder_conviction', 0.5),
+                    f'onchain:{symbol}:network_health_score': health_signals.get('network_health_score', 1.0),
+                })
+            
+            # === CASCADE RISK ===
+            if self._cascade_detector:
+                cascade_warning = self._cascade_detector.get_cascade_warning(
+                    funding=0.0,  # TODO: Get from futures data
+                    oi_change=0.0,
+                    vol_ratio=1.0,
+                    onchain=whale_signals
+                )
+                
+                redis_data.update({
+                    f'onchain:{symbol}:cascade_risk': cascade_warning['risk_score'],
+                    f'onchain:{symbol}:cascade_action': cascade_warning['action'],
+                    f'onchain:{symbol}:cascade_level': cascade_warning['risk_level'],
+                })
+                
+                # Log cascade warnings
+                if cascade_warning['risk_score'] > 0.4:
+                    logger.warning(
+                        f"⚠️ CASCADE RISK: {cascade_warning['risk_level']} "
+                        f"({cascade_warning['risk_score']:.2f}) - {cascade_warning['action']}"
+                    )
+                    self._metrics['onchain_cascade_warnings'] += 1
+            
+            # Publish to Redis with 5-minute TTL
+            pipeline = self._redis.pipeline()
+            for key, value in redis_data.items():
+                if isinstance(value, str):
+                    pipeline.setex(key, 300, value)
+                else:
+                    pipeline.setex(key, 300, str(value))
+            pipeline.execute()
+            
+            # Update metrics
+            self._metrics['onchain_signals_published'] += 1
+            self._onchain_last_update = current_ts
+            
+            logger.debug(f"Published {len(redis_data)} on-chain signals for {symbol}")
+        
+        except Exception as e:
+            logger.error(f"On-chain publish failed: {e}")
     
     def process_message(self, message: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """
@@ -987,6 +1120,11 @@ class SignalProcessor:
                 if time.time() - last_persist_time > persist_interval:
                     self._persist_all_states()
                     last_persist_time = time.time()
+                    
+                    # Publish on-chain signals (every 60 seconds)
+                    for symbol in self.config.symbols:
+                        self.publish_onchain_signals(symbol)
+                    
                     self._log_metrics()
         
         except Exception as e:
@@ -1011,6 +1149,7 @@ class SignalProcessor:
             f"Metrics: processed={self._metrics['messages_processed']}, "
             f"signals={self._metrics['signals_published']}, "
             f"sentiment={self._metrics['sentiment_signals_processed']}, "
+            f"onchain={self._metrics.get('onchain_signals_published', 0)}, "
             f"errors={self._metrics['errors']}, "
             f"latency={self._metrics['avg_latency_ms']:.2f}ms"
         )
