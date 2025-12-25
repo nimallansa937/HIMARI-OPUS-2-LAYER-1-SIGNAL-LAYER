@@ -125,3 +125,40 @@ except ImportError:
     AssetConfig = None
     ModelVariant = None
 
+# Dual Path Sentiment (Fast + Accurate routing)
+try:
+    from .dual_path_sentiment import (
+        DualPathSentimentAnalyzer,
+        DualPathConfig,
+        SentimentResult,
+        SignalType,
+        SourceType,
+        create_dual_path_analyzer
+    )
+    _DUAL_PATH_AVAILABLE = True
+except ImportError:
+    _DUAL_PATH_AVAILABLE = False
+    DualPathSentimentAnalyzer = None
+    DualPathConfig = None
+    SentimentResult = None
+    SignalType = None
+    SourceType = None
+    create_dual_path_analyzer = None
+
+
+def is_dual_path_available() -> bool:
+    """Check if dual-path sentiment analyzer is available."""
+    return _DUAL_PATH_AVAILABLE
+
+
+# Add to __all__
+__all__.extend([
+    # Dual Path Sentiment
+    'DualPathSentimentAnalyzer',
+    'DualPathConfig',
+    'SentimentResult',
+    'SignalType',
+    'SourceType',
+    'create_dual_path_analyzer',
+    'is_dual_path_available',
+])
