@@ -274,6 +274,11 @@ class OnChainWhaleTracker:
         if blockchain_txs:
             transactions.extend(blockchain_txs)
         
+        # Fetch from Etherscan (Ethereum whale movements)
+        eth_txs = self._fetch_etherscan_large_txs()
+        if eth_txs:
+            transactions.extend(eth_txs)
+        
         return transactions
     
     def _fetch_dune_whale_transactions(self) -> List[Dict]:
