@@ -114,7 +114,7 @@ class SymbolState:
     dempster_shafer: DempsterShafer = field(default_factory=DempsterShafer)
 
     # === Order Flow (NEW) ===
-    order_flow: 'OrderFlowFeatures' = None  # Lazy init to avoid circular import
+    order_flow: Optional[Any] = None  # Lazy init to avoid circular import
 
     # === Feature Vector Assembler (NEW) ===
     assembler: FeatureVectorAssembler = None  # Initialized in __post_init__
