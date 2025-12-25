@@ -90,4 +90,38 @@ __all__ = [
     'DynamicWeightConfig',
     'VolatilityRegime',
     'SocialRegime',
+    
+    # Enhancement 5: Social Media
+    'SocialSentimentAggregator',
+    'SocialPost',
+    'AggregatorConfig',
+    
+    # Enhancement 7: Multi-Asset
+    'MultiAssetSentimentManager',
+    'AssetConfig',
+    'ModelVariant',
 ]
+
+# Import new modules (lazy)
+try:
+    from .social_sentiment_aggregator import (
+        SocialSentimentAggregator,
+        SocialPost,
+        AggregatorConfig
+    )
+except ImportError:
+    SocialSentimentAggregator = None
+    SocialPost = None
+    AggregatorConfig = None
+
+try:
+    from .multi_asset_sentiment_manager import (
+        MultiAssetSentimentManager,
+        AssetConfig,
+        ModelVariant
+    )
+except ImportError:
+    MultiAssetSentimentManager = None
+    AssetConfig = None
+    ModelVariant = None
+
