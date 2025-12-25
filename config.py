@@ -285,7 +285,7 @@ class EnhancedSignalConfig:
     fusion_range_trend: float = 0.2
     
     # ===== Hybrid Sentiment =====
-    sentiment_enabled: bool = False  # Optional, requires API keys
+    sentiment_enabled: bool = True  # Enabled by default (fine-tuned model ready)
     sentiment_vader_weight: float = 0.35
     sentiment_finbert_weight: float = 0.65
     sentiment_model: str = "ProsusAI/finbert"
@@ -311,11 +311,11 @@ class EnhancedSignalConfig:
     latency_p99_total: float = 50.0  # ms
     
     # ===== Enhancement 4: Fine-Tuning =====
-    sentiment_use_fine_tuned: bool = False
-    sentiment_fine_tuned_model_path: str = "./models/finbert-crypto-finetuned"
+    sentiment_use_fine_tuned: bool = True
+    sentiment_fine_tuned_model_path: str = "./models/financial-roberta-crypto-finetuned"
     
     # ===== Enhancement 5: Social Media =====
-    enable_social_sentiment: bool = False
+    enable_social_sentiment: bool = True
     twitter_model: str = "cardiffnlp/twitter-roberta-base-sentiment-latest"
     social_spam_filter_enabled: bool = True
     social_min_engagement: int = 5
@@ -359,12 +359,12 @@ class EnhancedSignalConfig:
 def load_enhanced_config() -> EnhancedSignalConfig:
     """Load enhanced signal config from environment variables."""
     return EnhancedSignalConfig(
-        enabled=os.getenv("HIMARI_ENHANCED_LAYER1_ENABLED", "false").lower() == "true",
+        enabled=os.getenv("HIMARI_ENHANCED_LAYER1_ENABLED", "true").lower() == "true",
         hmm_enabled=os.getenv("HIMARI_HMM_ENABLED", "true").lower() == "true",
         obi_enabled=os.getenv("HIMARI_OBI_ENABLED", "true").lower() == "true",
         momentum_enabled=os.getenv("HIMARI_MOMENTUM_ENABLED", "true").lower() == "true",
         fusion_enabled=os.getenv("HIMARI_FUSION_ENABLED", "true").lower() == "true",
-        sentiment_enabled=os.getenv("HIMARI_SENTIMENT_ENABLED", "false").lower() == "true",
+        sentiment_enabled=os.getenv("HIMARI_SENTIMENT_ENABLED", "true").lower() == "true",
     )
 
 
