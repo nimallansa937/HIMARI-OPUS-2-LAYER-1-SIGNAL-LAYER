@@ -1,7 +1,7 @@
 """
 Integrated Signal Layer - Complete Layer 1 Signal Generation with SRM
 
-Combines all 7 enhanced primitives:
+Combines all 9 enhanced primitives:
 1. StreamingHMM - Zero-lag regime detection
 2. StreamingIndicators - O(1) technical indicators
 3. WelfordOnlineStats - Memory-efficient statistics
@@ -9,9 +9,37 @@ Combines all 7 enhanced primitives:
 5. OrderBookImbalance - Academic-validated OBI
 6. RegimeAwareSignalFusion - Regime-aware weighting
 7. HybridSentiment - VADER + FinBERT (optional)
+8. OnChainWhaleTracker - Exchange flows and whale detection (NEW)
+9. OnChainNetworkHealth - Network health indicators (NEW)
 
-Plus SRM integration for systemic risk gating.
+Plus SRM and CascadeDetector integration for systemic risk gating.
+
+Feature Vector: 70D (expanded from 60D with +10 on-chain features)
 """
+
+from typing import Dict, Optional
+from dataclasses import dataclass
+import logging
+import time as time_module
+
+from .streaming_hmm import StreamingHMM, HMMConfig, MarketRegime
+from .streaming_indicators import StreamingIndicators, IndicatorConfig
+from .welford_stats import WelfordOnlineStats
+from .multi_horizon_momentum import MultiHorizonMomentum, MomentumConfig
+from .order_book_imbalance import OrderBookImbalance, OBIConfig
+from .regime_fusion import RegimeAwareSignalFusion, FusionConfig
+
+# NEW: On-chain primitives
+try:
+    from .onchain_whale_tracker import OnChainWhaleTracker
+    from .onchain_network_health import OnChainNetworkHealth
+    from .enhanced_cascade_detector import EnhancedCascadeDetector
+    _ONCHAIN_AVAILABLE = True
+except ImportError:
+    _ONCHAIN_AVAILABLE = False
+    OnChainWhaleTracker = None
+    OnChainNetworkHealth = None
+    EnhancedCascadeDetector = None
 
 from typing import Dict, Optional
 from dataclasses import dataclass
@@ -170,6 +198,26 @@ class IntegratedSignalLayer:
             else:
                 logger.warning("Sentiment requested but torch/transformers not available")
         
+        # 8. NEW: Initialize on-chain whale tracker
+        self.whale_tracker = None
+        self.network_health = None
+        self.cascade_detector = None
+        
+        if _ONCHAIN_AVAILABLE and getattr(config, 'onchain_enabled', True):
+            try:
+                onchain_config = {
+                    'santiment_api_key': getattr(config, 'santiment_api_key', None),
+                    'dune_api_key': getattr(config, 'dune_api_key', None),
+                    'etherscan_api_key': getattr(config, 'etherscan_api_key', None),
+                    'update_interval': 60,
+                }
+                self.whale_tracker = OnChainWhaleTracker(onchain_config)
+                self.network_health = OnChainNetworkHealth(onchain_config)
+                self.cascade_detector = EnhancedCascadeDetector()
+                logger.info("   On-Chain: ✅ (Whale Tracker + Network Health + Cascade Detector)")
+            except Exception as e:
+                logger.warning(f"On-chain primitives failed to initialize: {e}")
+        
         # Register signals with fusion (after all components initialized)
         if self.fusion:
             self._register_signals()
@@ -315,12 +363,52 @@ class IntegratedSignalLayer:
                     for lag_name, lag_value in sentiment_result['lag_features'].items():
                         if lag_value != 0.0:  # Only add if buffer has sufficient data
                             components[lag_name] = lag_value
-
-                # Log dynamic weights used (for monitoring)
+            # Log dynamic weights used (for monitoring)
                 if 'weights_used' in sentiment_result:
                     logger.debug(f"Sentiment weights: {sentiment_result['weights_used']}")
 
-        # 8. Fuse signals with regime-aware weighting
+        # 8. NEW: Update on-chain primitives and add features
+        cascade_risk = 0.0
+        if self.whale_tracker:
+            import time as time_module # Import time_module here to avoid conflict with 'time' variable
+            current_ts = int(time_module.time())
+            
+            # Get whale activity signals
+            whale_signals = self.whale_tracker.update(current_ts)
+            components['exchange_netflow'] = whale_signals.get('exchange_netflow', 0)
+            components['exchange_netflow_zscore'] = whale_signals.get('exchange_netflow_zscore', 0)
+            components['whale_pressure'] = whale_signals.get('whale_pressure', 0)
+            components['large_tx_count'] = whale_signals.get('large_tx_count_5min', 0) / 10.0  # Normalized
+            components['concentration_risk'] = whale_signals.get('concentration_risk', 0)
+            
+            # Get network health signals
+            if self.network_health:
+                health_signals = self.network_health.update(current_ts)
+                components['active_addresses_zscore'] = health_signals.get('active_addresses_zscore', 0)
+                components['hash_rate_health'] = health_signals.get('hash_rate_health', 1.0)
+                components['fee_pressure'] = health_signals.get('fee_pressure', 0)
+                components['holder_conviction'] = health_signals.get('holder_conviction', 0.5)
+                components['network_health_score'] = health_signals.get('network_health_score', 1.0)
+            
+            # Get cascade detection early warning
+            if self.cascade_detector:
+                funding = 0.0  # TODO: Get from market data
+                oi_change = 0.0  # TODO: Get from market data
+                vol_ratio = 1.0  # TODO: Get from market data
+                
+                cascade_warning = self.cascade_detector.get_cascade_warning(
+                    funding=funding,
+                    oi_change=oi_change,
+                    vol_ratio=vol_ratio,
+                    onchain=whale_signals
+                )
+                cascade_risk = cascade_warning['risk_score']
+                components['cascade_risk'] = cascade_risk
+                
+                if cascade_risk > 0.4:
+                    logger.warning(f"Cascade risk elevated: {cascade_risk:.2f} - {cascade_warning['action']}")
+
+        # 9. Fuse signals with regime-aware weighting
         composite_signal = 0.0
 
         if self.fusion and components:
