@@ -33,36 +33,36 @@ from kafka import KafkaConsumer, KafkaProducer
 import numpy as np
 
 # Import our components - Tier 5 Primitives
-from .primitives.welford import WelfordVariance
-from .primitives.kalman import KalmanFilter, AdaptiveKalmanFilter
-from .primitives.ultimate_smoother import UltimateSmoother
-from .primitives.rls import RecursiveLeastSquares, RegressionChannel
-from .primitives.garch import OnlineGARCH
-from .primitives.hurst import MovingHurst
-from .primitives.volume import SyntheticVolumeDelta, RelativeVolume, OrderBookImbalance
-from .primitives.tdigest_quantiles import StreamingQuantiles
-from .primitives.covariance import OnlineCovariance
+from primitives.welford import WelfordVariance
+from primitives.kalman import KalmanFilter, AdaptiveKalmanFilter
+from primitives.ultimate_smoother import UltimateSmoother
+from primitives.rls import RecursiveLeastSquares, RegressionChannel
+from primitives.garch import OnlineGARCH
+from primitives.hurst import MovingHurst
+from primitives.volume import SyntheticVolumeDelta, RelativeVolume, OrderBookImbalance
+from primitives.tdigest_quantiles import StreamingQuantiles
+from primitives.covariance import OnlineCovariance
 
 # Tier 3 ML Layer
-from .ml import LorentzianKNN, EnsembleFusion
+from ml import LorentzianKNN, EnsembleFusion
 
 # Tier 1 Signal Fusion
-from .fusion import DempsterShafer
+from fusion import DempsterShafer
 
 # Feature Vector Assembly
-from .feature_vector import FeatureVectorAssembler
+from feature_vector import FeatureVectorAssembler
 
 # Regime Detection
-from .regime import StreamingHMM, RegimeState
+from regime import StreamingHMM, RegimeState
 
-from .config import (
+from config import (
     REDIS_HOST, REDIS_PORT, REDIS_PASSWORD, REDIS_SSL, REDIS_DB,
     KAFKA_BOOTSTRAP, KAFKA_CONSUMER_GROUP, KAFKA_INPUT_TOPIC,
     RedisKeys, L1Config, DEFAULT_CONFIG, load_enhanced_config
 )
 
 # Enhanced Layer 1 System (NEW)
-from .primitives.integrated_signal_layer import IntegratedSignalLayer, IntegratedSignalOutput
+from primitives.integrated_signal_layer import IntegratedSignalLayer, IntegratedSignalOutput
 
 # Setup logging
 logging.basicConfig(
