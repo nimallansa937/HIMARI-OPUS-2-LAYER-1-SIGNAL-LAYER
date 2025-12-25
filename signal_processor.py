@@ -196,6 +196,9 @@ class SignalProcessor:
         # Initialize Kafka consumer
         self._init_kafka()
         
+        # Initialize sentiment Kafka consumer
+        self._init_sentiment_kafka()
+        
         # Metrics
         self._metrics = {
             'messages_processed': 0,
@@ -204,6 +207,8 @@ class SignalProcessor:
             'last_latency_ms': 0.0,
             'avg_latency_ms': 0.0,
             'srm_reads': 0,
+            'sentiment_signals_processed': 0,
+            'sentiment_last_update': None,
         }
         
         # === Enhanced Layer 1 Integration (NEW) ===
@@ -250,6 +255,23 @@ class SignalProcessor:
         except redis.ConnectionError as e:
             logger.error(f"Redis connection failed: {e}")
             raise
+    
+    def _init_sentiment_kafka(self) -> None:
+        """Initialize Kafka consumer for sentiment signals."""
+        try:
+            self._sentiment_consumer = KafkaConsumer(
+                'sentiment_signals',  # Topic from sentiment_producer.py
+                bootstrap_servers=KAFKA_BOOTSTRAP,
+                group_id=f"{KAFKA_CONSUMER_GROUP}-sentiment",
+                value_deserializer=lambda m: json.loads(m.decode('utf-8')),
+                auto_offset_reset='latest',  # Only new sentiment
+                enable_auto_commit=True,
+                max_poll_records=10,  # Process in small batches
+            )
+            logger.info("Sentiment Kafka consumer initialized")
+        except Exception as e:
+            logger.error(f"Failed to connect to sentiment Kafka: {e}")
+            self._sentiment_consumer = None
     
     def _init_srm_redis(self) -> None:
         """
@@ -463,6 +485,53 @@ class SignalProcessor:
         pipe.set(knn_key, state.lorentzian.to_json())
         
         pipe.execute()
+    
+    def process_sentiment_signal(self, sentiment_data: Dict[str, Any]) -> None:
+        """Process sentiment signal from Kafka and publish to Redis."""
+        try:
+            symbol = sentiment_data.get('symbol', '').upper()
+            if not symbol:
+                logger.warning("Sentiment signal missing symbol")
+                return
+            
+            sentiment_score = float(sentiment_data.get('sentiment_score', 0))
+            signal_type = sentiment_data.get('signal', 'NEUTRAL')
+            timestamp_str = sentiment_data.get('timestamp', datetime.utcnow().isoformat())
+            sources = sentiment_data.get('sources', [])
+            
+            pipe = self._redis.pipeline()
+            pipe.set(f"signals:{symbol}:sentiment_score", sentiment_score)
+            pipe.set(f"signals:{symbol}:sentiment_signal", signal_type)
+            pipe.set(f"signals:{symbol}:sentiment_timestamp", timestamp_str)
+            pipe.set(f"signals:{symbol}:sentiment_sources", json.dumps(sources))
+            pipe.expire(f"signals:{symbol}:sentiment_score", 300)
+            pipe.expire(f"signals:{symbol}:sentiment_signal", 300)
+            pipe.expire(f"signals:{symbol}:sentiment_timestamp", 300)
+            pipe.expire(f"signals:{symbol}:sentiment_sources", 300)
+            pipe.execute()
+            
+            self._metrics['sentiment_signals_processed'] += 1
+            self._metrics['sentiment_last_update'] = timestamp_str
+            logger.debug(f"Sentiment: {symbol} = {signal_type} ({sentiment_score:+.2f})")
+        except Exception as e:
+            logger.error(f"Sentiment processing failed: {e}")
+            self._metrics['errors'] += 1
+    
+    def _run_sentiment_consumer(self) -> None:
+        """Run sentiment consumer in background thread."""
+        if not self._sentiment_consumer:
+            return
+        logger.info("Starting sentiment consumer...")
+        while self._running:
+            try:
+                messages = self._sentiment_consumer.poll(timeout_ms=1000)
+                for topic_partition, records in messages.items():
+                    for record in records:
+                        self.process_sentiment_signal(record.value)
+            except Exception as e:
+                logger.error(f"Sentiment consumer error: {e}")
+                time.sleep(1)
+        logger.info("Sentiment consumer stopped")
     
     def process_message(self, message: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """
@@ -884,6 +953,17 @@ class SignalProcessor:
         self._running = True
         logger.info("Starting signal processor...")
         
+        # Start sentiment consumer thread
+        sentiment_thread = None
+        if self._sentiment_consumer:
+            sentiment_thread = threading.Thread(
+                target=self._run_sentiment_consumer,
+                name="SentimentConsumer",
+                daemon=True
+            )
+            sentiment_thread.start()
+            logger.info("Sentiment consumer thread started")
+        
         persist_interval = 60  # Persist state every 60 seconds
         last_persist_time = time.time()
         
@@ -929,9 +1009,10 @@ class SignalProcessor:
         """Log current metrics."""
         logger.info(
             f"Metrics: processed={self._metrics['messages_processed']}, "
-            f"published={self._metrics['signals_published']}, "
+            f"signals={self._metrics['signals_published']}, "
+            f"sentiment={self._metrics['sentiment_signals_processed']}, "
             f"errors={self._metrics['errors']}, "
-            f"latency={self._metrics['last_latency_ms']:.2f}ms"
+            f"latency={self._metrics['avg_latency_ms']:.2f}ms"
         )
     
     def _shutdown_handler(self, signum, frame) -> None:
