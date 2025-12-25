@@ -16,8 +16,16 @@ Components:
     - validation: Strategy validation (DSR, CPCV, SPA tests)
 """
 
-from .signal_processor import SignalProcessor
-from .config import L1Config, RedisKeys
+# Conditional imports to support both package and script modes
+try:
+    from .signal_processor import SignalProcessor
+    from .config import L1Config, RedisKeys
+    __all__ = ['SignalProcessor', 'L1Config', 'RedisKeys']
+except ImportError:
+    # Running as script, not package - imports will fail
+    SignalProcessor = None
+    L1Config = None
+    RedisKeys = None
+    __all__ = []
 
 __version__ = "1.0.0"
-__all__ = ['SignalProcessor', 'L1Config', 'RedisKeys']

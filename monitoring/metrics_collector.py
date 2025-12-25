@@ -429,7 +429,11 @@ class AccuracyTracker:
     
     def compute_sentiment_skew(self) -> Optional[float]:
         """Compute sentiment distribution skewness."""
-        from scipy import stats
+        try:
+            from scipy import stats
+        except ImportError:
+            logger.warning("scipy not available - skewness calculation disabled")
+            return None
         
         if len(self._sentiments) < 100:
             return None

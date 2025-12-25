@@ -78,7 +78,7 @@ CRYPTO_LEXICON = {
 class HybridSentimentConfig:
     """Configuration for hybrid sentiment analyzer."""
     
-    # Model weights
+    # Model weights (static defaults)
     vader_weight: float = 0.35
     transformer_weight: float = 0.65
     
@@ -94,6 +94,16 @@ class HybridSentimentConfig:
     
     # Cache settings
     cache_ttl_seconds: int = 300  # 5 minutes
+    
+    # ENHANCEMENT 1: Sentiment Lag Features
+    enable_lag_features: bool = False
+    max_lag_bars: int = 360  # 6 hours at 1-minute bars
+    bar_interval_minutes: int = 1
+    
+    # ENHANCEMENT 2: Dynamic Weighting
+    enable_dynamic_weighting: bool = False
+    weight_smoothing_alpha: float = 0.1
+    min_regime_duration: int = 5
 
 
 class HybridSentimentAnalyzer:
@@ -138,14 +148,52 @@ class HybridSentimentAnalyzer:
             self.finbert = None
             logger.warning("Transformers not available, install transformers")
         
+        # ENHANCEMENT 1: Lag Buffer
+        self.lag_buffer = None
+        if self.config.enable_lag_features:
+            try:
+                from .sentiment_lag_buffer import SentimentLagBuffer, LagConfig
+                lag_config = LagConfig(
+                    max_lag_bars=self.config.max_lag_bars,
+                    bar_interval_minutes=self.config.bar_interval_minutes
+                )
+                self.lag_buffer = SentimentLagBuffer(lag_config)
+                logger.info("Sentiment lag buffer initialized")
+            except ImportError as e:
+                logger.warning(f"Lag buffer not available: {e}")
+        
+        # ENHANCEMENT 2: Dynamic Weighter
+        self.weighter = None
+        if self.config.enable_dynamic_weighting:
+            try:
+                from .dynamic_sentiment_weights import DynamicSentimentWeighter, DynamicWeightConfig
+                weight_config = DynamicWeightConfig(
+                    weight_smoothing_alpha=self.config.weight_smoothing_alpha,
+                    min_regime_duration=self.config.min_regime_duration
+                )
+                self.weighter = DynamicSentimentWeighter(weight_config)
+                logger.info("Dynamic sentiment weighter initialized")
+            except ImportError as e:
+                logger.warning(f"Dynamic weighter not available: {e}")
+        
         self.analysis_count = 0
     
-    def analyze(self, text: str) -> Dict[str, float]:
+    def analyze(
+        self, 
+        text: str,
+        regime_context: Optional[Dict] = None,
+        symbol: str = 'BTCUSDT',
+        source: str = 'news'
+    ) -> Dict[str, float]:
         """
         Analyze sentiment of single text.
         
         Args:
             text: Input text (tweet, headline, etc.)
+            regime_context: Optional dict with 'atr', 'social_zscore', 'market_regime'
+                           for dynamic weighting (Enhancement 2)
+            symbol: Trading symbol for lag buffer tracking (Enhancement 1)
+            source: Source type ('news', 'twitter', 'reddit')
         
         Returns:
             Dict with:
@@ -153,6 +201,8 @@ class HybridSentimentAnalyzer:
                 - vader_score: VADER component
                 - finbert_score: FinBERT component
                 - label: 'bullish', 'bearish', or 'neutral'
+                - lag_features: Dict of lagged sentiment features (Enhancement 1)
+                - weights_used: Dict of weights used (Enhancement 2)
         """
         # Get VADER score
         if self.vader is not None:
@@ -168,11 +218,25 @@ class HybridSentimentAnalyzer:
         else:
             finbert_score = 0.0
         
-        # Weighted combination
-        composite = (
-            self.config.vader_weight * vader_score +
-            self.config.transformer_weight * finbert_score
-        )
+        # ENHANCEMENT 2: Get dynamic weights based on regime
+        if self.weighter and regime_context:
+            weights = self.weighter.get_weights(regime_context)
+            vader_weight = weights.get('vader', self.config.vader_weight)
+            finbert_weight = weights.get('finbert', self.config.transformer_weight)
+        else:
+            vader_weight = self.config.vader_weight
+            finbert_weight = self.config.transformer_weight
+        
+        weights_used = {'vader': vader_weight, 'finbert': finbert_weight}
+        
+        # Weighted combination with dynamic weights
+        composite = vader_weight * vader_score + finbert_weight * finbert_score
+        
+        # ENHANCEMENT 1: Update lag buffer and get features
+        lag_features = {}
+        if self.lag_buffer:
+            self.lag_buffer.update(symbol, composite, source=source)
+            lag_features = self.lag_buffer.get_lag_features(symbol, source=source)
         
         # Determine label
         if composite > self.config.bullish_threshold:
@@ -188,7 +252,9 @@ class HybridSentimentAnalyzer:
             'score': composite,
             'vader_score': vader_score,
             'finbert_score': finbert_score,
-            'label': label
+            'label': label,
+            'lag_features': lag_features,
+            'weights_used': weights_used
         }
     
     def analyze_batch(self, texts: List[str]) -> List[Dict[str, float]]:
