@@ -1,20 +1,25 @@
 # HIMARI Layer 1 Signal Layer - Enhanced Implementation
 
-**Status: PRODUCTION READY** | **Date: 2024-12-24**
+**Status: PRODUCTION READY** | **Date: 2024-12-25**
 
 Production implementation of Enhanced Layer 1 Signal Enhancements with 7 core algorithmic components, achieving +6.05 Sharpe improvement (1512% of target).
+
+## 🏗️ System Architecture
+
+![HIMARI Signal Layer Architecture](docs/architecture_flowchart.png)
 
 ## System Status
 
 | Component | Status | Details |
 |-----------|--------|---------|
-| Torch/Transformers | WORKING | Torch 2.9.1+cpu |
-| Sentiment Analysis | WORKING | VADER + FinBERT |
-| IntegratedSignalLayer | WORKING | 0.20ms avg latency |
-| CPCV Validation | PASSED | +6.05 Sharpe improvement |
-| All 7 Primitives | WORKING | Production-ready |
-| Unit Tests | PASSING | 21/21 tests |
-| signal_processor.py | INTEGRATED | Enhanced Layer 1 |
+| Torch/Transformers | ✅ WORKING | Torch 2.9.1+cpu |
+| Sentiment Analysis | ✅ WORKING | VADER + Financial-RoBERTa |
+| IntegratedSignalLayer | ✅ WORKING | 0.20ms avg latency |
+| CPCV Validation | ✅ PASSED | +6.05 Sharpe improvement |
+| All 7 Primitives | ✅ WORKING | Production-ready |
+| Fine-Tuning Dataset | ✅ READY | 12,000+ training examples |
+| Unit Tests | ✅ PASSING | 21/21 tests |
+| signal_processor.py | ✅ INTEGRATED | Enhanced Layer 1 |
 
 ## Quick Start
 
