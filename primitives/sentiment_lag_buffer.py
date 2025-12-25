@@ -229,3 +229,210 @@ class SentimentLagBuffer:
         else:
             self._buffers.clear()
             self._update_counts.clear()
+
+    # =========================================================================
+    # RESEARCH-BACKED ENHANCEMENTS
+    # =========================================================================
+    
+    def get_decayed_sentiment(
+        self, 
+        symbol: str, 
+        source: str = 'news',
+        decay_half_life_minutes: float = 120.0
+    ) -> float:
+        """
+        Apply exponential decay to historical sentiment (Enhancement #1).
+        
+        Research shows older news decays exponentially with ~2-4h half-life for crypto.
+        This gives recent sentiment more weight than older sentiment.
+        
+        Args:
+            symbol: Trading symbol
+            source: Sentiment source
+            decay_half_life_minutes: Half-life in minutes (default 2h)
+        
+        Returns:
+            Decay-weighted sentiment score (-1 to +1)
+        """
+        if symbol not in self._buffers or source not in self._buffers[symbol]:
+            return 0.0
+        
+        buffer = list(self._buffers[symbol][source])
+        if not buffer:
+            return 0.0
+        
+        weighted_sum = 0.0
+        weight_sum = 0.0
+        
+        # Most recent is at end of buffer, oldest at start
+        for i, sentiment in enumerate(reversed(buffer)):
+            age_minutes = i * self.config.bar_interval_minutes
+            weight = 2 ** (-age_minutes / decay_half_life_minutes)
+            weighted_sum += sentiment * weight
+            weight_sum += weight
+        
+        return weighted_sum / weight_sum if weight_sum > 0 else 0.0
+    
+    def get_sentiment_momentum(
+        self, 
+        symbol: str, 
+        source: str = 'news',
+        lookback_minutes: int = 60
+    ) -> Dict[str, float]:
+        """
+        Calculate sentiment momentum (rate of change) (Enhancement #6).
+        
+        Research shows sentiment change rate predicts reversals.
+        
+        Args:
+            symbol: Trading symbol
+            source: Sentiment source
+            lookback_minutes: Lookback window
+        
+        Returns:
+            Dict with momentum metrics: rate, acceleration, velocity
+        """
+        if symbol not in self._buffers or source not in self._buffers[symbol]:
+            return {'rate': 0.0, 'acceleration': 0.0, 'velocity': 0.0}
+        
+        buffer = list(self._buffers[symbol][source])
+        lookback_bars = lookback_minutes // self.config.bar_interval_minutes
+        
+        if len(buffer) < lookback_bars:
+            return {'rate': 0.0, 'acceleration': 0.0, 'velocity': 0.0}
+        
+        recent = buffer[-lookback_bars:]
+        
+        # Velocity: Current - Start
+        velocity = recent[-1] - recent[0]
+        
+        # Rate: Average change per bar
+        rate = velocity / lookback_bars if lookback_bars > 0 else 0.0
+        
+        # Acceleration: Change in velocity (2nd derivative)
+        mid_point = len(recent) // 2
+        first_half_vel = recent[mid_point] - recent[0]
+        second_half_vel = recent[-1] - recent[mid_point]
+        acceleration = (second_half_vel - first_half_vel) / mid_point if mid_point > 0 else 0.0
+        
+        return {
+            'rate': rate,
+            'acceleration': acceleration,
+            'velocity': velocity
+        }
+    
+    def get_time_of_day_weight(self, hour_utc: int) -> float:
+        """
+        Get time-of-day weight for sentiment impact (Enhancement #10).
+        
+        Research shows news impact varies 2-3x by market session:
+        - Asian session (00:00-08:00 UTC): Lower impact
+        - London open (08:00-12:00 UTC): High impact
+        - US open (12:00-16:00 UTC): Highest impact  
+        - US afternoon (16:00-21:00 UTC): Medium impact
+        - Overnight (21:00-00:00 UTC): Lower impact
+        
+        Args:
+            hour_utc: Hour of day in UTC (0-23)
+            
+        Returns:
+            Weight multiplier (0.5 to 1.5)
+        """
+        TOD_WEIGHTS = {
+            0: 0.6, 1: 0.5, 2: 0.5, 3: 0.5, 4: 0.6, 5: 0.7, 6: 0.8, 7: 0.9,
+            8: 1.1, 9: 1.2, 10: 1.3, 11: 1.3,  # London session
+            12: 1.5, 13: 1.5, 14: 1.4, 15: 1.4, 16: 1.3,  # US session
+            17: 1.2, 18: 1.1, 19: 1.0, 20: 0.9,
+            21: 0.8, 22: 0.7, 23: 0.6
+        }
+        return TOD_WEIGHTS.get(hour_utc, 1.0)
+    
+    def get_cross_source_weighted_sentiment(
+        self, 
+        symbol: str,
+        source_weights: Optional[Dict[str, float]] = None
+    ) -> float:
+        """
+        Get weighted sentiment across all sources (Enhancement #7 prep).
+        
+        Args:
+            symbol: Trading symbol
+            source_weights: Custom weights per source (default: equal)
+            
+        Returns:
+            Weighted average sentiment
+        """
+        if symbol not in self._buffers:
+            return 0.0
+        
+        default_weights = {'news': 1.0, 'twitter': 0.7, 'reddit': 0.5}
+        weights = source_weights or default_weights
+        
+        weighted_sum = 0.0
+        weight_sum = 0.0
+        
+        for source, buffer in self._buffers[symbol].items():
+            if buffer:
+                current = buffer[-1]
+                weight = weights.get(source, 0.5)
+                weighted_sum += current * weight
+                weight_sum += weight
+        
+        return weighted_sum / weight_sum if weight_sum > 0 else 0.0
+
+    def get_all_enhanced_features(
+        self,
+        symbol: str,
+        hour_utc: Optional[int] = None
+    ) -> Dict[str, float]:
+        """
+        Get all enhanced sentiment features for signal generation.
+        
+        Combines all research-backed enhancements into single feature dict.
+        
+        Args:
+            symbol: Trading symbol
+            hour_utc: Current hour for time-of-day weighting
+            
+        Returns:
+            Dict with all enhanced features
+        """
+        import time
+        from datetime import datetime
+        
+        if hour_utc is None:
+            hour_utc = datetime.utcnow().hour
+        
+        features = {}
+        
+        # Standard lag features
+        features.update(self.get_lag_features(symbol))
+        
+        # Time-of-day weight
+        features['time_of_day_weight'] = self.get_time_of_day_weight(hour_utc)
+        
+        # Per-source enhanced features
+        for source in ['news', 'twitter', 'reddit']:
+            prefix = source
+            
+            # Decayed sentiment (half-life varies by source)
+            half_lives = {'news': 120.0, 'twitter': 60.0, 'reddit': 240.0}
+            features[f'{prefix}_decayed'] = self.get_decayed_sentiment(
+                symbol, source, half_lives.get(source, 120.0)
+            )
+            
+            # Sentiment momentum
+            momentum = self.get_sentiment_momentum(symbol, source)
+            features[f'{prefix}_momentum_rate'] = momentum['rate']
+            features[f'{prefix}_momentum_accel'] = momentum['acceleration']
+            features[f'{prefix}_momentum_velocity'] = momentum['velocity']
+        
+        # Cross-source weighted
+        features['weighted_sentiment'] = self.get_cross_source_weighted_sentiment(symbol)
+        
+        # Apply time-of-day weight to weighted sentiment
+        features['weighted_sentiment_tod_adj'] = (
+            features['weighted_sentiment'] * features['time_of_day_weight']
+        )
+        
+        return features

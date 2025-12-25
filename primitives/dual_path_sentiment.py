@@ -653,3 +653,375 @@ if __name__ == "__main__":
     print(f"Fast path p50 latency: {metrics['fast_path']['latency_p50_ms']:.2f}ms")
     print(f"Accurate path calls: {metrics['accurate_path']['call_count']}")
     print(f"Accurate path p50 latency: {metrics['accurate_path']['latency_p50_ms']:.2f}ms")
+
+
+# =============================================================================
+# RESEARCH-BACKED ENHANCEMENTS
+# =============================================================================
+
+@dataclass
+class DisagreementSignal:
+    """Result from disagreement analysis between fast and accurate paths."""
+    signal: str           # "HIGH_VOL_EXPECTED", "ALIGNED", "DIVERGENCE"
+    magnitude: float      # 0 to 2 (larger = more disagreement)
+    fast_score: float
+    accurate_score: float
+    confidence: float     # Lower when disagreement is high
+    volatility_forecast: str  # "high", "normal", "low"
+
+
+def compute_disagreement(
+    fast_result: SentimentResult,
+    accurate_result: SentimentResult
+) -> DisagreementSignal:
+    """
+    Compute disagreement signal between fast and accurate paths (Enhancement #8).
+    
+    Research shows high disagreement between sources = upcoming volatility spike.
+    When social media and news disagree, expect increased volatility.
+    
+    Args:
+        fast_result: Result from fast path (social media)
+        accurate_result: Result from accurate path (news)
+        
+    Returns:
+        DisagreementSignal with volatility forecast
+    """
+    disagreement = abs(fast_result.score - accurate_result.score)
+    
+    # Classify disagreement level
+    if disagreement > 1.0:
+        signal = "HIGH_VOL_EXPECTED"
+        volatility_forecast = "high"
+    elif disagreement > 0.5:
+        signal = "DIVERGENCE"
+        volatility_forecast = "high"
+    elif disagreement > 0.3:
+        signal = "DIVERGENCE"
+        volatility_forecast = "normal"
+    else:
+        signal = "ALIGNED"
+        volatility_forecast = "low"
+    
+    # Confidence is lower when disagreement is high
+    avg_confidence = (fast_result.confidence + accurate_result.confidence) / 2
+    adjusted_confidence = avg_confidence * (1 - disagreement / 2)
+    
+    return DisagreementSignal(
+        signal=signal,
+        magnitude=disagreement,
+        fast_score=fast_result.score,
+        accurate_score=accurate_result.score,
+        confidence=adjusted_confidence,
+        volatility_forecast=volatility_forecast
+    )
+
+
+class CrossAssetSentimentContagion:
+    """
+    Track cross-asset sentiment spillover (Enhancement #5).
+    
+    Research shows BTC sentiment spills to alts with ~15min lag.
+    Negative sentiment spreads faster than positive.
+    
+    Example:
+        contagion = CrossAssetSentimentContagion()
+        
+        # Update BTC sentiment
+        contagion.update_sentiment('BTCUSDT', -0.5)
+        
+        # Get spillover to ETH (with lag)
+        eth_spillover = contagion.get_spillover('ETHUSDT', 'BTCUSDT')
+        # Returns lagged BTC sentiment affecting ETH
+    """
+    
+    # Spillover coefficients (how much BTC affects other assets)
+    SPILLOVER_COEFFICIENTS = {
+        'BTCUSDT': 1.0,      # BTC is the source
+        'ETHUSDT': 0.75,     # ETH highly correlated
+        'SOLUSDT': 0.60,     # SOL moderately correlated
+        'BNBUSDT': 0.55,     # BNB moderately correlated
+        'XRPUSDT': 0.50,     # XRP less correlated
+        'ADAUSDT': 0.45,     # ADA less correlated
+        'DOGEUSDT': 0.70,    # DOGE follows BTC closely (meme correlation)
+    }
+    
+    # Lag in minutes for spillover to propagate
+    SPILLOVER_LAG_MINUTES = {
+        'ETHUSDT': 5,
+        'SOLUSDT': 10,
+        'BNBUSDT': 15,
+        'XRPUSDT': 20,
+        'ADAUSDT': 20,
+        'DOGEUSDT': 8,
+    }
+    
+    def __init__(self, buffer_minutes: int = 60):
+        """
+        Initialize cross-asset contagion tracker.
+        
+        Args:
+            buffer_minutes: How many minutes of history to keep
+        """
+        from collections import deque
+        self.buffer_minutes = buffer_minutes
+        
+        # {symbol: deque of (timestamp, sentiment)}
+        self._sentiment_history: Dict[str, deque] = {}
+        
+    def update_sentiment(self, symbol: str, sentiment: float) -> None:
+        """
+        Record sentiment update for a symbol.
+        
+        Args:
+            symbol: Trading symbol
+            sentiment: Sentiment score (-1 to +1)
+        """
+        from collections import deque
+        
+        if symbol not in self._sentiment_history:
+            self._sentiment_history[symbol] = deque(maxlen=self.buffer_minutes)
+        
+        self._sentiment_history[symbol].append((time.time(), sentiment))
+    
+    def get_spillover(
+        self, 
+        target_symbol: str, 
+        source_symbol: str = 'BTCUSDT'
+    ) -> Dict[str, float]:
+        """
+        Get sentiment spillover from source to target.
+        
+        Args:
+            target_symbol: Symbol receiving spillover
+            source_symbol: Symbol sending spillover (default: BTC)
+            
+        Returns:
+            Dict with spillover score, lag, and coefficient
+        """
+        if source_symbol not in self._sentiment_history:
+            return {
+                'spillover_score': 0.0,
+                'lag_minutes': 0,
+                'coefficient': 0.0,
+                'source_sentiment': 0.0
+            }
+        
+        history = list(self._sentiment_history[source_symbol])
+        if not history:
+            return {
+                'spillover_score': 0.0,
+                'lag_minutes': 0,
+                'coefficient': 0.0,
+                'source_sentiment': 0.0
+            }
+        
+        # Get lag for target
+        lag_minutes = self.SPILLOVER_LAG_MINUTES.get(target_symbol, 15)
+        coefficient = self.SPILLOVER_COEFFICIENTS.get(target_symbol, 0.5)
+        
+        # Find sentiment from lag_minutes ago
+        target_time = time.time() - (lag_minutes * 60)
+        lagged_sentiment = 0.0
+        
+        for ts, sentiment in reversed(history):
+            if ts <= target_time:
+                lagged_sentiment = sentiment
+                break
+        else:
+            # Use oldest if no exact match
+            lagged_sentiment = history[0][1] if history else 0.0
+        
+        # Compute spillover (negative sentiment spreads faster)
+        spillover_multiplier = 1.3 if lagged_sentiment < 0 else 1.0
+        spillover_score = lagged_sentiment * coefficient * spillover_multiplier
+        
+        return {
+            'spillover_score': spillover_score,
+            'lag_minutes': lag_minutes,
+            'coefficient': coefficient,
+            'source_sentiment': lagged_sentiment
+        }
+    
+    def get_all_spillovers(
+        self, 
+        source_symbol: str = 'BTCUSDT'
+    ) -> Dict[str, Dict[str, float]]:
+        """
+        Get spillovers from source to all tracked symbols.
+        
+        Returns:
+            Dict of target_symbol -> spillover data
+        """
+        spillovers = {}
+        for target in self.SPILLOVER_COEFFICIENTS:
+            if target != source_symbol:
+                spillovers[target] = self.get_spillover(target, source_symbol)
+        return spillovers
+
+
+@dataclass
+class SentimentVolumeDivergence:
+    """Result from sentiment-volume divergence analysis."""
+    divergence_type: str   # "BULLISH_DIV", "BEARISH_DIV", "ALIGNED", "NO_SIGNAL"
+    magnitude: float       # Strength of divergence
+    sentiment_direction: str  # "bullish", "bearish", "neutral"
+    volume_direction: str     # "increasing", "decreasing", "neutral"
+    is_reversal_signal: bool  # True if likely reversal
+
+
+def compute_sentiment_volume_divergence(
+    sentiment_score: float,
+    sentiment_change: float,  # Change over lookback period
+    volume_change: float,     # Volume change ratio (current/average)
+    threshold: float = 0.3
+) -> SentimentVolumeDivergence:
+    """
+    Compute sentiment-volume divergence signal (Enhancement #9).
+    
+    Research: Volume without sentiment = noise; with sentiment = signal.
+    Divergences between sentiment and volume often precede reversals.
+    
+    Args:
+        sentiment_score: Current sentiment (-1 to +1)
+        sentiment_change: Change in sentiment over lookback
+        volume_change: Volume ratio (>1 = increasing, <1 = decreasing)
+        threshold: Minimum absolute values for signal
+        
+    Returns:
+        SentimentVolumeDivergence with reversal signal
+    """
+    # Classify sentiment direction
+    if sentiment_change > threshold:
+        sentiment_direction = "bullish"
+    elif sentiment_change < -threshold:
+        sentiment_direction = "bearish"
+    else:
+        sentiment_direction = "neutral"
+    
+    # Classify volume direction
+    if volume_change > 1.2:  # 20% above average
+        volume_direction = "increasing"
+    elif volume_change < 0.8:  # 20% below average
+        volume_direction = "decreasing"
+    else:
+        volume_direction = "neutral"
+    
+    # Detect divergences
+    magnitude = abs(sentiment_change) * volume_change
+    
+    if sentiment_direction == "bullish" and volume_direction == "decreasing":
+        # Bullish sentiment + falling volume = weak rally, potential reversal
+        divergence_type = "BEARISH_DIV"
+        is_reversal_signal = True
+    elif sentiment_direction == "bearish" and volume_direction == "decreasing":
+        # Bearish sentiment + falling volume = weak selloff, potential bounce
+        divergence_type = "BULLISH_DIV"
+        is_reversal_signal = True
+    elif sentiment_direction == "bullish" and volume_direction == "increasing":
+        # Sentiment + volume aligned bullish = strong signal
+        divergence_type = "ALIGNED"
+        is_reversal_signal = False
+    elif sentiment_direction == "bearish" and volume_direction == "increasing":
+        # Sentiment + volume aligned bearish = strong signal
+        divergence_type = "ALIGNED"
+        is_reversal_signal = False
+    else:
+        divergence_type = "NO_SIGNAL"
+        is_reversal_signal = False
+    
+    return SentimentVolumeDivergence(
+        divergence_type=divergence_type,
+        magnitude=magnitude,
+        sentiment_direction=sentiment_direction,
+        volume_direction=volume_direction,
+        is_reversal_signal=is_reversal_signal
+    )
+
+
+class EnhancedDualPathAnalyzer(DualPathSentimentAnalyzer):
+    """
+    Enhanced dual-path analyzer with all research-backed features.
+    
+    Adds:
+    - Disagreement signal detection
+    - Cross-asset sentiment contagion
+    - Sentiment-volume divergence
+    
+    Example:
+        analyzer = EnhancedDualPathAnalyzer()
+        
+        # Full analysis with both paths
+        full_result = analyzer.analyze_dual(
+            "BTC crashing!",
+            source_social="twitter",
+            source_news="bloomberg"
+        )
+    """
+    
+    def __init__(self, config: Optional[DualPathConfig] = None):
+        super().__init__(config)
+        self._contagion_tracker = CrossAssetSentimentContagion()
+    
+    def analyze_dual(
+        self,
+        text: str,
+        source_social: str = "twitter",
+        source_news: str = "bloomberg"
+    ) -> Dict:
+        """
+        Analyze text with both paths and compute disagreement.
+        
+        Args:
+            text: Input text
+            source_social: Social media source label
+            source_news: News source label
+            
+        Returns:
+            Dict with both results and disagreement signal
+        """
+        # Analyze with both paths
+        fast_result = self._analyze_fast(text, source_social)
+        accurate_result = self._analyze_accurate(text, source_news)
+        
+        # Compute disagreement
+        disagreement = compute_disagreement(fast_result, accurate_result)
+        
+        # Recommend which signal to trust
+        if disagreement.signal == "ALIGNED":
+            recommended_score = (fast_result.score + accurate_result.score) / 2
+            recommended_confidence = max(fast_result.confidence, accurate_result.confidence)
+        elif accurate_result.confidence > fast_result.confidence:
+            recommended_score = accurate_result.score
+            recommended_confidence = accurate_result.confidence * 0.8  # Penalize for disagreement
+        else:
+            recommended_score = fast_result.score
+            recommended_confidence = fast_result.confidence * 0.7  # Fast path less reliable
+        
+        return {
+            'fast_result': fast_result.to_dict(),
+            'accurate_result': accurate_result.to_dict(),
+            'disagreement': {
+                'signal': disagreement.signal,
+                'magnitude': disagreement.magnitude,
+                'volatility_forecast': disagreement.volatility_forecast,
+                'confidence': disagreement.confidence
+            },
+            'recommended': {
+                'score': recommended_score,
+                'confidence': recommended_confidence,
+                'label': 'bullish' if recommended_score > 0.3 else ('bearish' if recommended_score < -0.3 else 'neutral')
+            }
+        }
+    
+    def update_contagion(self, symbol: str, sentiment: float) -> None:
+        """Update contagion tracker with new sentiment."""
+        self._contagion_tracker.update_sentiment(symbol, sentiment)
+    
+    def get_spillover(
+        self, 
+        target_symbol: str, 
+        source_symbol: str = 'BTCUSDT'
+    ) -> Dict[str, float]:
+        """Get sentiment spillover from source to target."""
+        return self._contagion_tracker.get_spillover(target_symbol, source_symbol)

@@ -161,4 +161,37 @@ __all__.extend([
     'SourceType',
     'create_dual_path_analyzer',
     'is_dual_path_available',
+    
+    # Research-Backed Enhancements
+    'SourceCredibilityTracker',
+    'EnhancedDualPathAnalyzer',
+    'DisagreementSignal',
+    'CrossAssetSentimentContagion',
+    'SentimentVolumeDivergence',
+    'compute_disagreement',
+    'compute_sentiment_volume_divergence',
 ])
+
+# Import additional enhancement classes
+try:
+    from .dual_path_sentiment import (
+        DisagreementSignal,
+        CrossAssetSentimentContagion,
+        SentimentVolumeDivergence,
+        EnhancedDualPathAnalyzer,
+        compute_disagreement,
+        compute_sentiment_volume_divergence,
+    )
+except ImportError:
+    DisagreementSignal = None
+    CrossAssetSentimentContagion = None
+    SentimentVolumeDivergence = None
+    EnhancedDualPathAnalyzer = None
+    compute_disagreement = None
+    compute_sentiment_volume_divergence = None
+
+try:
+    from .dynamic_sentiment_weights import SourceCredibilityTracker
+except ImportError:
+    SourceCredibilityTracker = None
+
