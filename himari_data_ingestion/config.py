@@ -28,7 +28,7 @@ KAFKA_PRODUCER_CONFIG = {
     'retry.backoff.ms': 100,
     'linger.ms': 5,  # Batch for 5ms for throughput
     'batch.size': 16384,  # 16KB batches
-    'compression.type': 'lz4',  # Fast compression
+    'compression.type': 'none',  # lz4 requires extra lib, use none for now
 }
 
 # =============================================================================

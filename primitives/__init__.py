@@ -1,58 +1,73 @@
 """
-HIMARI L1 Primitives - O(1) Streaming Algorithms
+Primitives Module - Enhanced Layer 1 Signal Components
 
-All algorithms in this module operate in constant time per update,
-making them suitable for <10ms latency requirements.
-
-Tier 5 Components (Foundation):
-- WelfordVariance: Numerically stable online variance
-- KalmanFilter: Adaptive trend estimation
-- UltimateSmoother: Zero-lag trend filter (Ehlers 2024)
-- RecursiveLeastSquares: O(1) regression channels
-- OnlineGARCH: Volatility forecasting
-- StreamingQuantiles: T-Digest quantile estimation
-- OnlineCovariance: Cross-asset correlation tracking
-- MovingHurst: Regime detection (replaces Choppiness Index)
-- SyntheticVolumeDelta: Volume microstructure
-
-Tier 4 Components (DSP):
-- SampleEntropy: Complexity-based regime detection
+Backwards-compatible imports for the enhanced signal generation system.
 """
 
-from .welford import WelfordVariance, WelfordSlidingWindow
-from .kalman import KalmanFilter, AdaptiveKalmanFilter, KalmanWithVelocity
-from .ultimate_smoother import UltimateSmoother, SuperSmoother
-from .rls import RecursiveLeastSquares, RegressionChannel
-from .garch import OnlineGARCH, AdaptiveGARCH, OnlineEGARCH
-from .tdigest_quantiles import StreamingQuantiles, VolumeProfile
-from .covariance import OnlineCovariance, ExponentialCovariance, CorrelationMatrix
-from .hurst import MovingHurst, SampleEntropy
-from .volume import SyntheticVolumeDelta, RelativeVolume, OrderBookImbalance
+from .streaming_hmm import StreamingHMM, MarketRegime, HMMConfig
+from .streaming_indicators import StreamingIndicators, IndicatorConfig
+from .welford_stats import WelfordOnlineStats, MultiSymbolWelford, WelfordState
+from .multi_horizon_momentum import MultiHorizonMomentum, MomentumConfig
+from .order_book_imbalance import OrderBookImbalance, OBIConfig
+from .regime_fusion import RegimeAwareSignalFusion, FusionConfig, SignalDefinition, SignalCategory
+
+# Lazy import for sentiment (optional - requires torch/transformers)
+# Use get_hybrid_sentiment() to access when needed
+try:
+    from .hybrid_sentiment import HybridSentimentAnalyzer, HybridSentimentConfig, CRYPTO_LEXICON
+    _SENTIMENT_AVAILABLE = True
+except (ImportError, OSError) as e:
+    import logging
+    logging.getLogger(__name__).debug(f"Sentiment module not available: {e}")
+    _SENTIMENT_AVAILABLE = False
+    HybridSentimentAnalyzer = None
+    HybridSentimentConfig = None
+    CRYPTO_LEXICON = {}
+
+from .integrated_signal_layer import IntegratedSignalLayer, IntegratedSignalOutput
+
+
+def is_sentiment_available() -> bool:
+    """Check if sentiment analysis is available."""
+    return _SENTIMENT_AVAILABLE
+
 
 __all__ = [
-    # Tier 5: Core primitives
-    'WelfordVariance',
-    'WelfordSlidingWindow',
-    'KalmanFilter',
-    'AdaptiveKalmanFilter',
-    'KalmanWithVelocity',
-    'UltimateSmoother',
-    'SuperSmoother',
-    'RecursiveLeastSquares',
-    'RegressionChannel',
-    'OnlineGARCH',
-    'AdaptiveGARCH',
-    'OnlineEGARCH',
-    'StreamingQuantiles',
-    'VolumeProfile',
-    'OnlineCovariance',
-    'ExponentialCovariance',
-    'CorrelationMatrix',
-    # Tier 4: DSP/Regime
-    'MovingHurst',
-    'SampleEntropy',
-    # Tier 2: Volume microstructure
-    'SyntheticVolumeDelta',
-    'RelativeVolume',
+    # HMM Regime Detection
+    'StreamingHMM',
+    'MarketRegime',
+    'HMMConfig',
+    
+    # Streaming Indicators
+    'StreamingIndicators',
+    'IndicatorConfig',
+    
+    # Online Statistics
+    'WelfordOnlineStats',
+    'MultiSymbolWelford',
+    'WelfordState',
+    
+    # Momentum Features
+    'MultiHorizonMomentum',
+    'MomentumConfig',
+    
+    # Order Book Imbalance
     'OrderBookImbalance',
+    'OBIConfig',
+    
+    # Signal Fusion
+    'RegimeAwareSignalFusion',
+    'FusionConfig',
+    'SignalDefinition',
+    'SignalCategory',
+    
+    # Hybrid Sentiment (optional - may be None if deps unavailable)
+    'HybridSentimentAnalyzer',
+    'HybridSentimentConfig',
+    'CRYPTO_LEXICON',
+    'is_sentiment_available',
+    
+    # Integrated Layer (Complete System)
+    'IntegratedSignalLayer',
+    'IntegratedSignalOutput',
 ]

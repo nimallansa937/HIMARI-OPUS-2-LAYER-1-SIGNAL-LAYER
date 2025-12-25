@@ -1,0 +1,78 @@
+version: '3.8'
+
+services:
+  srm:
+    build:
+      context: .
+      dockerfile: Dockerfile.srm
+    environment:
+      - SRM_REDIS_URL=redis://redis:6379
+      - SRM_SYMBOLS=BTCUSDT,ETHUSDT
+      - SRM_DRY_RUN=true
+      - SRM_TELEGRAM_BOT_TOKEN=${SRM_TELEGRAM_BOT_TOKEN:-}
+      - SRM_TELEGRAM_CHAT_ID=${SRM_TELEGRAM_CHAT_ID:-}
+      - COINGLASS_API_KEY=${COINGLASS_API_KEY:-}
+    depends_on:
+      - redis
+    restart: unless-stopped
+    networks:
+      - himari
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  redis:
+    image: redis:7-alpine
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    ports:
+      - "6379:6379"
+    networks:
+      - himari
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ==========================================================================
+  # Example: HIMARI main trading loop integration
+  # ==========================================================================
+  # signal_layer:
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile
+  #   environment:
+  #     - SRM_REDIS_URL=redis://redis:6379
+  #   depends_on:
+  #     - srm
+  #   networks:
+  #     - himari
+  #
+  # In your trading code:
+  # import redis
+  # import os
+  # r = redis.from_url(os.getenv('SRM_REDIS_URL'))
+  # risk_data = r.hgetall('srm:risk:BTCUSDT')
+  # risk_score = float(risk_data.get('score', 0))
+  # 
+  # if risk_score > 0.9:
+  #     # Emergency halt
+  #     pass
+  # elif risk_score > 0.7:
+  #     # Close-only mode
+  #     pass
+  # elif risk_score > 0.5:
+  #     # Reduce position sizes by 50%
+  #     pass
+  # ==========================================================================
+
+volumes:
+  redis_data:
+
+networks:
+  himari:
+    driver: bridge

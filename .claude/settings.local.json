@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python:*)",
+      "Bash(pip uninstall:*)",
+      "Bash(pip install:*)"
+    ]
+  }
+}

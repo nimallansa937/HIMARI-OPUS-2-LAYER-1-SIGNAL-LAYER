@@ -118,7 +118,7 @@ class KafkaPublisher:
                     'retry.backoff.ms': 100,
                     'linger.ms': self._linger_ms,
                     'batch.size': 16384,
-                    'compression.type': 'lz4',
+                    'compression.type': 'none',
                     # Error callback
                     'error_cb': self._on_error,
                     # Delivery callback
@@ -133,7 +133,7 @@ class KafkaPublisher:
                     retries=3,
                     linger_ms=self._linger_ms,
                     batch_size=16384,
-                    compression_type='lz4',
+                    compression_type='gzip',
                     value_serializer=lambda v: json.dumps(v).encode('utf-8'),
                     key_serializer=lambda k: k.encode('utf-8') if k else None,
                 )

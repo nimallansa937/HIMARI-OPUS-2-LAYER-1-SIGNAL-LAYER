@@ -335,9 +335,12 @@ class RelativeVolume:
         self._count = 0
 
 
-class OrderBookImbalance:
+class VolumeOrderBookImbalance:
     """
-    Synthetic Order Book Imbalance from OHLCV data.
+    LEGACY: Synthetic Order Book Imbalance from OHLCV data.
+    
+    NOTE: This is the OLD implementation. Use primitives.order_book_imbalance.OrderBookImbalance
+    for the NEW academic-validated version with true Level 2 data.
     
     Approximates OBI without Level 2 data by using close position
     relative to the bar range as a proxy for order flow direction.
@@ -436,7 +439,7 @@ class OrderBookImbalance:
         }
     
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> 'OrderBookImbalance':
+    def from_dict(cls, data: Dict[str, Any]) -> 'VolumeOrderBookImbalance':
         """Restore from serialized state."""
         period = int((2 / data['ema_alpha']) - 1)
         instance = cls(ema_period=period)
@@ -450,3 +453,7 @@ class OrderBookImbalance:
         self._last_obi = 0.0
         self._obi_ema = 0.0
         self._count = 0
+
+
+# Backwards compatibility alias
+OrderBookImbalance = VolumeOrderBookImbalance

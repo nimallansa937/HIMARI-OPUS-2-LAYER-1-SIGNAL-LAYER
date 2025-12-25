@@ -169,6 +169,13 @@ class L1Config:
     enable_entropy: bool = True
     enable_obi: bool = True
     
+    # SRM Integration
+    enable_srm: bool = True          # Enable Systemic Risk Monitor integration
+    srm_redis_url: str = None        # SRM Redis URL (uses same Redis if None)
+    srm_reduce_threshold: float = 0.5   # Score above this = reduce position size
+    srm_close_only_threshold: float = 0.7  # Score above this = close-only mode
+    srm_halt_threshold: float = 0.9  # Score above this = halt trading
+    
     def __post_init__(self):
         if self.symbols is None:
             self.symbols = ["BTCUSDT", "ETHUSDT"]
@@ -188,7 +195,149 @@ class L1Config:
             self.obi = OBIConfig()
         if self.validation is None:
             self.validation = ValidationConfig()
+        # SRM Redis defaults to main Redis if not specified
+        if self.srm_redis_url is None:
+            self.srm_redis_url = os.getenv(
+                "SRM_REDIS_URL", 
+                f"redis://{REDIS_HOST}:{REDIS_PORT}/{REDIS_DB}"
+            )
+
+
+# =============================================================================
+# ENHANCED LAYER 1 CONFIGURATION (NEW)
+# =============================================================================
+
+@dataclass
+class EnhancedSignalConfig:
+    """
+    Layer 1 Enhancement Configuration.
+    
+    Controls the new algorithmic enhancements:
+    - StreamingHMM for zero-lag regime detection
+    - Streaming indicators (talipp)
+    - Multi-horizon momentum
+    - Order Book Imbalance
+    - Regime-aware signal fusion
+    - Hybrid sentiment analysis
+    """
+    
+    # Feature Flag: Enable entire enhanced system
+    enabled: bool = False  # Set to True to activate
+    
+    # ===== HMM Configuration =====
+    hmm_enabled: bool = True
+    hmm_n_states: int = 3  # Bull, Bear, Range
+    hmm_transition_persistence: float = 0.95
+    hmm_range_persistence: float = 0.80
+    hmm_adaptive_enabled: bool = True
+    hmm_adaptive_lookback: int = 200
+    hmm_adaptive_frequency: int = 50
+    
+    # Emission parameters (calibrated from BTC 1h)
+    hmm_bull_mean: float = 0.001
+    hmm_bull_std: float = 0.010
+    hmm_bear_mean: float = -0.001
+    hmm_bear_std: float = 0.020
+    hmm_range_mean: float = 0.0
+    hmm_range_std: float = 0.005
+    
+    # ===== Streaming Indicators =====
+    indicators_enabled: bool = True
+    ema_periods: tuple = (5, 10, 21, 50, 200)
+    rsi_period: int = 14
+    macd_fast: int = 12
+    macd_slow: int = 26
+    macd_signal: int = 9
+    bb_period: int = 20
+    bb_std: float = 2.0
+    atr_period: int = 14
+    
+    # ===== Welford Statistics =====
+    welford_min_samples: int = 20
+    
+    # ===== Multi-Horizon Momentum =====
+    momentum_enabled: bool = True
+    momentum_horizons: tuple = (5, 10, 21, 63)
+    momentum_normalization: str = 'zscore'
+    
+    # ===== Order Book Imbalance =====
+    obi_enabled: bool = True
+    obi_levels: int = 5
+    obi_depth_percentage: float = 0.01  # 1%
+    obi_ema_period: int = 20
+    
+    # ===== Regime-Aware Signal Fusion =====
+    fusion_enabled: bool = True
+    fusion_confidence_threshold: float = 0.70
+    fusion_min_regime_duration: int = 5
+    
+    # Regime weight multipliers
+    fusion_bull_momentum: float = 1.5
+    fusion_bull_mean_rev: float = 0.4
+    fusion_bull_trend: float = 1.3
+    
+    fusion_bear_momentum: float = 1.2
+    fusion_bear_mean_rev: float = 0.6
+    fusion_bear_trend: float = 1.1
+    
+    fusion_range_momentum: float = 0.3
+    fusion_range_mean_rev: float = 1.8
+    fusion_range_trend: float = 0.2
+    
+    # ===== Hybrid Sentiment =====
+    sentiment_enabled: bool = False  # Optional, requires API keys
+    sentiment_vader_weight: float = 0.35
+    sentiment_finbert_weight: float = 0.65
+    sentiment_model: str = "ProsusAI/finbert"
+    sentiment_batch_size: int = 32
+    
+    # ===== SRM Integration (Enhanced) =====
+    srm_reduce_threshold: float = 0.5
+    srm_close_only_threshold: float = 0.7
+    srm_halt_threshold: float = 0.9
+    
+    def get_regime_weights(self) -> dict:
+        """Get regime-specific weight multipliers."""
+        return {
+            'Bull': {
+                'momentum': self.fusion_bull_momentum,
+                'mean_reversion': self.fusion_bull_mean_rev,
+                'trend_following': self.fusion_bull_trend,
+            },
+            'Bear': {
+                'momentum': self.fusion_bear_momentum,
+                'mean_reversion': self.fusion_bear_mean_rev,
+                'trend_following': self.fusion_bear_trend,
+            },
+            'Range': {
+                'momentum': self.fusion_range_momentum,
+                'mean_reversion': self.fusion_range_mean_rev,
+                'trend_following': self.fusion_range_trend,
+            }
+        }
+
+
+# Environment variable overrides for EnhancedSignalConfig
+def load_enhanced_config() -> EnhancedSignalConfig:
+    """Load enhanced signal config from environment variables."""
+    return EnhancedSignalConfig(
+        enabled=os.getenv("HIMARI_ENHANCED_LAYER1_ENABLED", "false").lower() == "true",
+        hmm_enabled=os.getenv("HIMARI_HMM_ENABLED", "true").lower() == "true",
+        obi_enabled=os.getenv("HIMARI_OBI_ENABLED", "true").lower() == "true",
+        momentum_enabled=os.getenv("HIMARI_MOMENTUM_ENABLED", "true").lower() == "true",
+        fusion_enabled=os.getenv("HIMARI_FUSION_ENABLED", "true").lower() == "true",
+        sentiment_enabled=os.getenv("HIMARI_SENTIMENT_ENABLED", "false").lower() == "true",
+    )
 
 
 # Default config instance
 DEFAULT_CONFIG = L1Config()
+
+# Enhanced config instance (NEW)
+ENHANCED_CONFIG = load_enhanced_config()
+
+# =============================================================================
+# LOGGING
+# =============================================================================
+
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")

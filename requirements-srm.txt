@@ -1,0 +1,12 @@
+# HIMARI SRM Dependencies
+aiohttp>=3.8.0
+redis>=4.5.0
+numpy>=1.24.0
+pandas>=2.0.0
+
+# Optional: Binance Futures for emergency exits
+# binance-futures-connector>=4.0.0
+
+# Optional: Testing
+# pytest>=7.0.0
+# pytest-asyncio>=0.21.0

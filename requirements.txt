@@ -7,6 +7,12 @@ scipy>=1.11.0
 pandas>=2.0.0
 redis>=5.0.0
 
+# Layer 1 Enhancements (NEW)
+talipp>=2.0.0              # O(1) streaming indicators
+vaderSentiment>=3.3.2      # Lexicon-based sentiment (MANDATORY)
+transformers>=4.30.0       # FinBERT transformer (MANDATORY)
+torch>=2.0.0               # PyTorch for transformers (MANDATORY)
+
 # Streaming algorithms
 tdigest>=0.5.2
 

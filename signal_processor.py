@@ -58,8 +58,11 @@ from .regime import StreamingHMM, RegimeState
 from .config import (
     REDIS_HOST, REDIS_PORT, REDIS_PASSWORD, REDIS_SSL, REDIS_DB,
     KAFKA_BOOTSTRAP, KAFKA_CONSUMER_GROUP, KAFKA_INPUT_TOPIC,
-    RedisKeys, L1Config, DEFAULT_CONFIG
+    RedisKeys, L1Config, DEFAULT_CONFIG, load_enhanced_config
 )
+
+# Enhanced Layer 1 System (NEW)
+from .primitives.integrated_signal_layer import IntegratedSignalLayer, IntegratedSignalOutput
 
 # Setup logging
 logging.basicConfig(
@@ -73,43 +76,49 @@ logger = logging.getLogger('himari.l1')
 class SymbolState:
     """
     Per-symbol processing state.
-    
+
     Holds all streaming algorithm instances for a single trading pair.
-    Complete HIMARI L1 5-tier architecture with 50D feature output.
+    Complete HIMARI L1 5-tier architecture with 60D feature output.
     """
     symbol: str
-    
+
     # === TIER 5: Streaming Primitives ===
     # Price tracking
     kalman: KalmanFilter = field(default_factory=lambda: KalmanFilter(0.01, 0.1))
     smoother: UltimateSmoother = field(default_factory=lambda: UltimateSmoother(20))
-    
+
     # Volatility/Variance
     returns_welford: WelfordVariance = field(default_factory=WelfordVariance)
     garch: OnlineGARCH = field(default_factory=OnlineGARCH)
-    
+
     # Volume microstructure
     volume_delta: SyntheticVolumeDelta = field(default_factory=SyntheticVolumeDelta)
     rvol: RelativeVolume = field(default_factory=RelativeVolume)
     obi: OrderBookImbalance = field(default_factory=OrderBookImbalance)
-    
+
     # Distribution tracking
     tdigest: StreamingQuantiles = field(default_factory=StreamingQuantiles)
-    
+
     # === TIER 4: DSP/Regime ===
     hurst: MovingHurst = field(default_factory=lambda: MovingHurst(100, 10))
     hmm: StreamingHMM = field(default_factory=lambda: StreamingHMM(3))
     regression: RegressionChannel = field(default_factory=lambda: RegressionChannel(0.99, 2.0))
-    
+
     # === TIER 3: ML Prediction ===
     lorentzian: LorentzianKNN = field(default_factory=lambda: LorentzianKNN(k=20, feature_dim=15))
     ensemble: EnsembleFusion = field(default_factory=lambda: EnsembleFusion(
         num_models=4, model_names=['kalman', 'lorentzian', 'hmm', 'hurst']
     ))
-    
+
     # === TIER 1: Signal Fusion ===
     dempster_shafer: DempsterShafer = field(default_factory=DempsterShafer)
-    
+
+    # === Order Flow (NEW) ===
+    order_flow: 'OrderFlowFeatures' = None  # Lazy init to avoid circular import
+
+    # === Feature Vector Assembler (NEW) ===
+    assembler: FeatureVectorAssembler = None  # Initialized in __post_init__
+
     # === Tracking ===
     last_price: float = 0.0
     last_open: float = 0.0
@@ -117,9 +126,37 @@ class SymbolState:
     last_low: float = 0.0
     last_timestamp: int = 0
     tick_count: int = 0
-    
-    # Feature vector (50D output for Layer 2)
-    feature_vector: np.ndarray = field(default_factory=lambda: np.zeros(50))
+
+    # Feature vector (60D output for Layer 2)
+    feature_vector: np.ndarray = field(default_factory=lambda: np.zeros(60))
+
+    def __post_init__(self):
+        """Initialize feature assembler after primitives are created."""
+        # Lazy import to avoid circular dependency
+        from .primitives.order_flow import OrderFlowFeatures
+
+        # Initialize order flow
+        if self.order_flow is None:
+            self.order_flow = OrderFlowFeatures()
+
+        # Initialize assembler with all primitives
+        if self.assembler is None:
+            self.assembler = FeatureVectorAssembler(
+                kalman=self.kalman,
+                ultimate_smoother=self.smoother,
+                garch=self.garch,
+                hmm=self.hmm,
+                hurst=self.hurst,
+                welford=self.returns_welford,
+                volume_delta=self.volume_delta,
+                rvol=self.rvol,
+                obi=self.obi,
+                lorentzian=self.lorentzian,
+                ensemble=self.ensemble,
+                dempster_shafer=self.dempster_shafer,
+                tdigest=self.tdigest,
+                order_flow=self.order_flow,
+            )
     
     def compute_return(self, price: float) -> float:
         """Compute log return from last price."""
@@ -153,6 +190,9 @@ class SignalProcessor:
         # Initialize Redis connection
         self._init_redis()
         
+        # Initialize SRM Redis client (for systemic risk scores)
+        self._init_srm_redis()
+        
         # Initialize Kafka consumer
         self._init_kafka()
         
@@ -163,13 +203,32 @@ class SignalProcessor:
             'errors': 0,
             'last_latency_ms': 0.0,
             'avg_latency_ms': 0.0,
+            'srm_reads': 0,
         }
+        
+        # === Enhanced Layer 1 Integration (NEW) ===
+        self.enhanced_config = load_enhanced_config()
+        self.integrated_layer = None
+        self._enhanced_symbol_layers: Dict[str, IntegratedSignalLayer] = {}
+        
+        if self.enhanced_config.enabled:
+            logger.info("✅ Enhanced Layer 1 ENABLED - Initializing IntegratedSignalLayer")
+            # Create per-symbol integrated layers for maximum isolation
+            for symbol in self.config.symbols:
+                self._enhanced_symbol_layers[symbol] = IntegratedSignalLayer(
+                    self.enhanced_config, 
+                    redis_client=self._redis
+                )
+            logger.info(f"   Initialized {len(self._enhanced_symbol_layers)} IntegratedSignalLayers")
+        else:
+            logger.info("Using legacy signal system (Enhanced Layer 1 disabled)")
         
         # Setup graceful shutdown
         signal.signal(signal.SIGINT, self._shutdown_handler)
         signal.signal(signal.SIGTERM, self._shutdown_handler)
         
         logger.info(f"SignalProcessor initialized for symbols: {self.config.symbols}")
+        logger.info(f"SRM integration: {'enabled' if self.config.enable_srm else 'disabled'}")
     
     def _init_redis(self) -> None:
         """Initialize Redis connection."""
@@ -191,6 +250,122 @@ class SignalProcessor:
         except redis.ConnectionError as e:
             logger.error(f"Redis connection failed: {e}")
             raise
+    
+    def _init_srm_redis(self) -> None:
+        """
+        Initialize SRM Redis connection for systemic risk score reading.
+        
+        The SRM publishes risk scores to Redis which this processor reads
+        to adjust position sizing recommendations based on systemic risk.
+        """
+        if not self.config.enable_srm:
+            self._srm_redis = None
+            return
+        
+        try:
+            self._srm_redis = redis.from_url(
+                self.config.srm_redis_url,
+                decode_responses=True,
+                socket_timeout=1.0,  # Fast timeout - don't block trading
+                socket_connect_timeout=1.0,
+            )
+            self._srm_redis.ping()
+            logger.info(f"SRM Redis connected: {self.config.srm_redis_url}")
+        except Exception as e:
+            logger.warning(f"SRM Redis connection failed (trading will continue without SRM): {e}")
+            self._srm_redis = None
+    
+    def get_srm_risk(self, symbol: str) -> Dict[str, Any]:
+        """
+        Read current SRM risk score for symbol.
+        
+        Args:
+            symbol: Trading symbol
+        
+        Returns:
+            Dict with risk data or default safe values if unavailable
+        """
+        default_result = {
+            'score': 0.0,
+            'regime': 'normal',
+            'position_multiplier': 1.0,
+            'action': 'normal',
+            'srm_available': False,
+        }
+        
+        if not self.config.enable_srm or self._srm_redis is None:
+            return default_result
+        
+        try:
+            # Read from SRM Redis keys
+            key = f"srm:risk:{symbol}"
+            data = self._srm_redis.hgetall(key)
+            
+            if not data:
+                return default_result
+            
+            score = float(data.get('score', 0))
+            regime = data.get('regime', 'normal')
+            
+            # Calculate position multiplier based on score
+            if score >= self.config.srm_halt_threshold:
+                position_multiplier = 0.0
+                action = 'halt'
+            elif score >= self.config.srm_close_only_threshold:
+                position_multiplier = 0.0
+                action = 'close_only'
+            elif score >= self.config.srm_reduce_threshold:
+                # Linear scale from 1.0 at reduce_threshold to 0.0 at close_only_threshold
+                range_size = self.config.srm_close_only_threshold - self.config.srm_reduce_threshold
+                if range_size > 0:
+                    position_multiplier = 1.0 - (score - self.config.srm_reduce_threshold) / range_size * 0.5
+                else:
+                    position_multiplier = 0.5
+                action = 'reduce'
+            else:
+                position_multiplier = 1.0
+                action = 'normal'
+            
+            self._metrics['srm_reads'] += 1
+            
+            return {
+                'score': score,
+                'regime': regime,
+                'position_multiplier': position_multiplier,
+                'action': action,
+                'fsi': float(data.get('fsi', 0)),
+                'lei': float(data.get('lei', 0)),
+                'ods': float(data.get('ods', 0)),
+                'scsi': float(data.get('scsi', 0)),
+                'lci': float(data.get('lci', 0)),
+                'caci': float(data.get('caci', 0)),
+                'risk_level': data.get('risk_level', 'UNKNOWN'),
+                'srm_available': True,
+            }
+            
+        except Exception as e:
+            logger.debug(f"SRM read failed for {symbol}: {e}")
+            return default_result
+    
+    def _get_srm_signals(self, symbol: str) -> Dict[str, Any]:
+        """
+        Get SRM signals with prefixed keys for output.
+        
+        Args:
+            symbol: Trading symbol
+        
+        Returns:
+            Dict with 'srm_' prefixed keys for signal output
+        """
+        srm_data = self.get_srm_risk(symbol)
+        return {
+            'srm_score': srm_data['score'],
+            'srm_regime': srm_data['regime'],
+            'srm_position_multiplier': srm_data['position_multiplier'],
+            'srm_action': srm_data['action'],
+            'srm_available': srm_data['srm_available'],
+            'srm_risk_level': srm_data.get('risk_level', 'UNKNOWN'),
+        }
     
     def _init_kafka(self) -> None:
         """Initialize Kafka consumer."""
@@ -292,22 +467,31 @@ class SignalProcessor:
     def process_message(self, message: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """
         Process market data through complete 5-tier signal pipeline.
-        
+
         Tiers:
             5. Streaming Primitives (Welford, Kalman, GARCH, T-Digest)
             4. DSP/Regime (Hurst, HMM, Regression)
             3. ML Prediction (Lorentzian KNN, Ensemble)
             2. Volatility/Microstructure (Volume Delta, RVOL)
             1. Signal Fusion (Dempster-Shafer)
-        
+
         Returns:
-            Dict with signals + 50D feature vector for Layer 2
+            Dict with signals + 60D feature vector for Layer 2
         """
         start_time = time.perf_counter()
-        
+
         try:
             # === EXTRACT FIELDS ===
             symbol = message.get('symbol', '').upper()
+            message_type = message.get('type', 'ohlcv')  # NEW: detect message type
+
+            # Handle different message types
+            if message_type == 'orderbook':
+                return self._process_orderbook(message)
+            elif message_type == 'trade':
+                return self._process_trade(message)
+
+            # Default: OHLCV processing
             price = float(message.get('price', 0))
             timestamp = int(message.get('timestamp', 0))
             volume = float(message.get('volume', 0))
@@ -324,6 +508,50 @@ class SignalProcessor:
             if quality_score < 0.5:
                 logger.debug(f"Skipping low quality message for {symbol}: {quality_score}")
                 return None
+            
+            # ============================================================
+            # ENHANCED LAYER 1 PROCESSING (NEW)
+            # ============================================================
+            if self.enhanced_config.enabled and symbol in self._enhanced_symbol_layers:
+                # Use new IntegratedSignalLayer
+                ohlcv = {
+                    'open': open_price,
+                    'high': high,
+                    'low': low,
+                    'close': price,
+                    'volume': volume
+                }
+                
+                # Get orderbook if available from message
+                orderbook = message.get('orderbook', None)
+                
+                # Process through enhanced layer
+                enhanced_output = self._enhanced_symbol_layers[symbol].update(
+                    symbol, ohlcv, orderbook
+                )
+                
+                # Build response with enhanced signals
+                latency_ms = (time.perf_counter() - start_time) * 1000
+                
+                return {
+                    'symbol': symbol,
+                    'timestamp': timestamp,
+                    'signal': enhanced_output.composite_signal * enhanced_output.position_multiplier,
+                    'composite_signal': enhanced_output.composite_signal,
+                    'regime': enhanced_output.regime,
+                    'regime_confidence': enhanced_output.regime_confidence,
+                    'position_multiplier': enhanced_output.position_multiplier,
+                    'srm_risk_score': enhanced_output.srm_risk_score,
+                    'srm_action': enhanced_output.srm_action,
+                    'components': enhanced_output.components,
+                    'enhanced_layer1': True,
+                    'latency_ms': latency_ms,
+                    'update_count': enhanced_output.update_count,
+                }
+            
+            # ============================================================
+            # LEGACY PROCESSING (Below)
+            # ============================================================
             
             # Get symbol state
             state = self._get_state(symbol)
@@ -435,75 +663,21 @@ class SignalProcessor:
             should_trade, trade_reason = state.dempster_shafer.should_trade()
             
             # ============================================================
-            # ASSEMBLE 50D FEATURE VECTOR FOR LAYER 2
+            # ASSEMBLE 60D FEATURE VECTOR USING FeatureVectorAssembler
             # ============================================================
-            
-            feature_vector = np.zeros(50)
-            
-            # Trend features (0-7)
-            feature_vector[0] = np.tanh((kalman_price - price) / price * 10) if price > 0 else 0
-            feature_vector[1] = state.kalman.gain if hasattr(state.kalman, 'gain') else 0
-            feature_vector[2] = np.tanh((smoothed_price - price) / price * 10) if price > 0 else 0
-            feature_vector[3] = abs(reg_result['slope']) / 0.01
-            feature_vector[4] = hurst_value * 2 - 1
-            feature_vector[5] = 1.0 if hurst_regime == 'trending' else (-1.0 if hurst_regime == 'mean_reverting' else 0)
-            feature_vector[6] = np.sign(price - smoothed_price)
-            feature_vector[7] = hmm_conf
-            
-            # Momentum features (8-15)
-            feature_vector[8] = p_bullish * 2 - 1
-            feature_vector[9] = knn_confidence
-            feature_vector[10] = ensemble_signal * 2 - 1
-            feature_vector[11] = ensemble_agreement
-            feature_vector[12] = 0  # Momentum divergence placeholder
-            feature_vector[13] = np.tanh(ret * 50)
-            feature_vector[14] = mean_reversion_signal
-            feature_vector[15] = 0.5  # Momentum persistence
-            
-            # Volatility features (16-23)
-            feature_vector[16] = min(garch_vol / 0.05, 1.0)
-            feature_vector[17] = {'low': -1, 'normal': 0, 'high': 1}.get(garch_regime, 0)
-            feature_vector[18] = regime_probs.get('BULL', 0.33)
-            feature_vector[19] = regime_probs.get('BEAR', 0.33)
-            feature_vector[20] = regime_probs.get('RANGE', 0.34)
-            feature_vector[21] = realized_vol / (garch_vol + 0.001)
-            feature_vector[22] = np.tanh(z_score / 2)
-            feature_vector[23] = 0  # Vol trend
-            
-            # Volume features (24-33)
-            feature_vector[24] = np.tanh(vol_delta / (volume + 1))
-            feature_vector[25] = np.tanh(cvd / 1e6)
-            feature_vector[26] = 0  # CVD divergence
-            feature_vector[27] = np.tanh(rvol_zscore / 3)
-            feature_vector[28] = obi
-            feature_vector[29] = state.obi.imbalance_trend
-            feature_vector[30] = 0  # Volume momentum
-            feature_vector[31] = 1 if rvol_zscore > 2 else 0  # Volume breakout
-            feature_vector[32] = max(0, obi)
-            feature_vector[33] = max(0, -obi)
-            
-            # Statistical features (34-41)
-            feature_vector[34] = price_percentile * 2 - 1
-            feature_vector[35] = 0  # Realized vs GARCH
-            feature_vector[36] = 0  # Skewness
-            feature_vector[37] = 0  # Kurtosis
-            feature_vector[38] = 0  # Correlation (need cross-asset)
-            feature_vector[39] = 0  # Correlation strength
-            feature_vector[40] = -feature_vector[5]  # Mean reversion = inverse trend
-            feature_vector[41] = 0  # Autocorrelation
-            
-            # Meta features (42-45)
-            feature_vector[42] = 1 - ds_uncertainty
-            feature_vector[43] = state.dempster_shafer.conflict_level
-            feature_vector[44] = 0  # Drawdown forecast
-            feature_vector[45] = abs(regime_probs.get('BULL', 0.33) - regime_probs.get('BEAR', 0.33))
-            
-            # SMC/Microstructure (46-49)
-            feature_vector[46] = 0.5  # Liquidity
-            feature_vector[47] = 0    # Spread
-            feature_vector[48] = 0    # Impact
-            feature_vector[49] = 0    # Execution risk
-            
+
+            ohlcv_data = {
+                'timestamp': timestamp,
+                'open': open_price,
+                'high': high,
+                'low': low,
+                'close': price,
+                'volume': volume,
+            }
+
+            # Use the assembler to build the 60D feature vector
+            feature_vector = state.assembler.update(ohlcv_data)
+
             # Store feature vector in state
             state.feature_vector = feature_vector
             
@@ -565,6 +739,9 @@ class SignalProcessor:
                 # === Feature Vector (for L2) ===
                 'feature_vector': feature_vector.tolist(),
                 
+                # === SRM Systemic Risk (NEW) ===
+                **self._get_srm_signals(symbol),
+                
                 # === Metadata ===
                 'timestamp': timestamp,
                 'price': float(price),
@@ -590,6 +767,68 @@ class SignalProcessor:
             self._metrics['errors'] += 1
             return None
     
+    def _process_orderbook(self, message: Dict[str, Any]) -> None:
+        """
+        Process order book update.
+
+        Updates OrderFlowFeatures but doesn't generate full signals.
+        Signals are only generated on OHLCV updates.
+        """
+        try:
+            symbol = message.get('symbol', '').upper()
+            if not symbol:
+                return None
+
+            state = self._get_state(symbol)
+
+            # Extract order book data
+            bids = message.get('bids', [])  # List of [price, quantity]
+            asks = message.get('asks', [])
+            timestamp = message.get('timestamp', 0)
+
+            # Update order flow features
+            state.order_flow.update_orderbook(bids, asks, timestamp)
+
+            logger.debug(f"Updated order book for {symbol}: {len(bids)} bids, {len(asks)} asks")
+            return None  # Don't generate signals on order book updates
+
+        except Exception as e:
+            logger.error(f"Error processing order book: {e}", exc_info=True)
+            return None
+
+    def _process_trade(self, message: Dict[str, Any]) -> None:
+        """
+        Process individual trade.
+
+        Updates OrderFlowFeatures but doesn't generate full signals.
+        Signals are only generated on OHLCV updates.
+        """
+        try:
+            symbol = message.get('symbol', '').upper()
+            if not symbol:
+                return None
+
+            state = self._get_state(symbol)
+
+            # Extract trade data
+            price = float(message.get('price', 0))
+            quantity = float(message.get('quantity', message.get('qty', 0)))
+            is_buyer_maker = message.get('is_buyer_maker', message.get('isBuyerMaker', False))
+            timestamp = message.get('timestamp', 0)
+
+            if price <= 0 or quantity <= 0:
+                return None
+
+            # Update order flow features
+            state.order_flow.update_trade(price, quantity, is_buyer_maker, timestamp)
+
+            logger.debug(f"Updated trade for {symbol}: {price} x {quantity}")
+            return None  # Don't generate signals on trade updates
+
+        except Exception as e:
+            logger.error(f"Error processing trade: {e}", exc_info=True)
+            return None
+
     def publish_signals(self, signals: Dict[str, Any]) -> None:
         """
         Publish computed signals to Redis.
