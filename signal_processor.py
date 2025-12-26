@@ -1051,15 +1051,15 @@ class SignalProcessor:
         # Individual signal keys (for efficient single-value reads)
         pipe.set(
             RedisKeys.for_symbol(RedisKeys.SIGNAL_MOMENTUM, symbol),
-            signals['momentum']
+            signals.get('momentum', 0.0)
         )
         pipe.set(
             RedisKeys.for_symbol(RedisKeys.SIGNAL_MEAN_REV, symbol),
-            signals['mean_reversion']
+            signals.get('mean_reversion', 0.0)
         )
         pipe.set(
             RedisKeys.for_symbol(RedisKeys.SIGNAL_VOLATILITY, symbol),
-            signals['volatility']
+            signals.get('volatility', 0.0)
         )
         pipe.set(
             RedisKeys.for_symbol(RedisKeys.REGIME_STATE, symbol),
