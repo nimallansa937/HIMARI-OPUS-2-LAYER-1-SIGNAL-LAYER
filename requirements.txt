@@ -1,0 +1,50 @@
+# HIMARI Layer 1 Explorer Agent - Dependencies
+
+# Core
+numpy>=1.24.0
+scipy>=1.10.0
+pandas>=2.0.0
+
+# Deep Learning
+torch>=2.0.0
+
+# Machine Learning
+scikit-learn>=1.2.0
+
+# Bayesian Optimization (optional, for full multi-fidelity BO)
+# botorch>=0.9.0
+
+# Drift Detection
+# river>=0.15.0  # Optional, we have fallback implementations
+
+# Web Crawling
+aiohttp>=3.8.0
+beautifulsoup4>=4.12.0
+arxiv>=1.4.0
+
+# Causal Inference (optional)
+# dowhy>=0.9.0
+
+# Infrastructure - Full Stack
+redis>=4.5.0
+aiokafka>=0.8.0
+neo4j>=5.0.0
+prometheus-client>=0.16.0
+
+# LLM Providers
+google-generativeai>=0.3.0  # Gemini API
+openai>=1.0.0               # For Ollama/DeepSeek OpenAI-compatible endpoints
+httpx>=0.25.0               # Async HTTP for local Ollama
+
+# Configuration
+pyyaml>=6.0.0
+
+# Utilities
+tqdm>=4.65.0
+python-dateutil>=2.8.2
+
+# Development (optional)
+# pytest>=7.0.0
+# pytest-asyncio>=0.21.0
+# black>=23.0.0
+# mypy>=1.0.0
