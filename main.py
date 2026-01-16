@@ -21,7 +21,7 @@ from typing import Optional, List, Dict, Any
 # Core imports
 from src.core.genome import StrategyGenome, generate_random_strategy
 from src.core.grammar import GrammarValidator
-from src.core.features import FeatureVector, get_feature_schema
+from src.core.features import FeatureVector, FEATURE_SCHEMA
 
 # Engine imports
 from src.engines.evolutionary import EvolutionaryExplorer
@@ -94,24 +94,22 @@ class Layer1Explorer:
         # Generation engines
         self.evolutionary = EvolutionaryExplorer(
             population_size=cfg.generation.population_size,
-            elite_count=cfg.generation.elite_count,
+            elite_size=cfg.generation.elite_count,
             mutation_rate=cfg.generation.mutation_rate,
             crossover_rate=cfg.generation.crossover_rate
         )
 
-        self.generative = FlowMatchingGenerator(
-            n_steps=cfg.generation.flow_steps,
-            cfg_scale=cfg.generation.cfg_scale
-        )
+        self.generative = FlowMatchingGenerator()
 
-        # LLM client
+        # LLM client (DeepSeek)
         llm_client = create_llm_client(
             provider=cfg.llm.primary_provider,
             api_key=cfg.llm.primary_api_key,
-            model=cfg.llm.primary_model
+            model=cfg.llm.primary_model,
+            base_url=cfg.llm.primary_base_url
         )
 
-        self.llm_guided = LLMGuidedGenerator(llm_client=llm_client)
+        self.llm_guided = LLMGuidedGenerator(primary_client=llm_client)
         self.harvester = ExternalIdeaHarvester(llm_client=llm_client)
 
         # Engine orchestrator
@@ -137,7 +135,7 @@ class Layer1Explorer:
         self.psro = PSRODiversityManager(PSROConfig())
 
         # Validation pipeline
-        self.hifa = HIFAPipeline(grammar=self.grammar)
+        self.hifa = HIFAPipeline(grammar_validator=self.grammar, surrogate_model=None)
         self.batch_processor = BatchHIFAProcessor(pipeline=self.hifa)
         self.causal_gate = CausalValidationGate()
         self.bayesian_opt = MultiFidelityBayesianOptimizer()
@@ -232,7 +230,7 @@ class Layer1Explorer:
                 # Infer causal hypothesis
                 hypothesis = self.causal_gate.infer_hypothesis(
                     strategy,
-                    [f.name for f in get_feature_schema()]
+                    [f.name for f in FEATURE_SCHEMA]
                 )
 
                 # Mock data for causal validation

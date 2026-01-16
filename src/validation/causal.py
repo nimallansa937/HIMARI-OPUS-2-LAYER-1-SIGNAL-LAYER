@@ -634,18 +634,20 @@ class CausalValidationGate:
         if strategy.decision_tree and strategy.decision_tree.condition:
             primary_signal = strategy.decision_tree.condition.signal
 
-        # Map signal to mechanism
+        # Map signal to mechanism (using actual SignalType enum values)
         signal_to_mechanism = {
-            SignalType.RSI: CausalMechanism.MEAN_REVERSION,
-            SignalType.MACD: CausalMechanism.MOMENTUM,
-            SignalType.BOLLINGER: CausalMechanism.VOLATILITY,
-            SignalType.ATR: CausalMechanism.VOLATILITY,
-            SignalType.VOLUME: CausalMechanism.LIQUIDITY,
-            SignalType.OBV: CausalMechanism.LIQUIDITY,
+            SignalType.MOMENTUM_RSI: CausalMechanism.MOMENTUM,
+            SignalType.MOMENTUM_EMA: CausalMechanism.MOMENTUM,
+            SignalType.MOMENTUM_MACD: CausalMechanism.MOMENTUM,
+            SignalType.REVERSION_BB: CausalMechanism.MEAN_REVERSION,
+            SignalType.REVERSION_RSI: CausalMechanism.MEAN_REVERSION,
+            SignalType.REVERSION_ZSCORE: CausalMechanism.MEAN_REVERSION,
+            SignalType.VOLATILITY_ATR: CausalMechanism.VOLATILITY,
+            SignalType.VOLATILITY_BB_WIDTH: CausalMechanism.VOLATILITY,
+            SignalType.ORDERFLOW_IMBALANCE: CausalMechanism.LIQUIDITY,
+            SignalType.ORDERFLOW_CVD: CausalMechanism.LIQUIDITY,
             SignalType.FUNDING_RATE: CausalMechanism.FUNDING,
-            SignalType.OPEN_INTEREST: CausalMechanism.SENTIMENT,
-            SignalType.PRICE_MOMENTUM: CausalMechanism.MOMENTUM,
-            SignalType.VWAP: CausalMechanism.MICROSTRUCTURE,
+            SignalType.FUNDING_OI: CausalMechanism.FUNDING,
         }
 
         mechanism = signal_to_mechanism.get(

@@ -100,33 +100,23 @@ adaptation:
   max_consecutive_failures: 3
   winddown_days: 7
 
-# LLM Configuration
+# LLM Configuration - DeepSeek as sole provider
 llm:
-  # Primary: Gemini
-  primary_provider: gemini
-  primary_model: gemini-1.5-pro
-  primary_api_key: ${GEMINI_API_KEY}
+  # Primary: DeepSeek API
+  primary_provider: deepseek
+  primary_model: deepseek-chat
+  primary_api_key: sk-e928b23d6fa245e188a2c18f85d9ff61
+  primary_base_url: https://api.deepseek.com
 
-  # Local: Ollama with DeepSeek
-  local_provider: ollama
-  local_base_url: http://localhost:11434
-  local_model: deepseek-coder:33b
-
-  # Fallback: DeepSeek API
-  fallback_provider: deepseek
-  fallback_base_url: https://api.deepseek.com
-  fallback_model: deepseek-chat
-  fallback_api_key: ${DEEPSEEK_API_KEY}
-
-  # Usage allocation
+  # All tasks use DeepSeek
   strategy_generation_provider: primary
-  knowledge_extraction_provider: local
-  idea_harvesting_provider: local
+  knowledge_extraction_provider: primary
+  idea_harvesting_provider: primary
   mutation_guidance_provider: primary
 
   # Rate limiting
-  max_requests_per_minute: 30
-  timeout_seconds: 60
+  max_requests_per_minute: 60
+  timeout_seconds: 120
 
 # Infrastructure
 infrastructure:

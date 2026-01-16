@@ -131,31 +131,21 @@ class AdaptationConfig:
 @dataclass
 class LLMConfig:
     """Configuration for LLM providers."""
-    # Primary provider (Gemini)
-    primary_provider: str = "gemini"
-    primary_model: str = "gemini-1.5-pro"
+    # Primary provider
+    primary_provider: str = "deepseek"
+    primary_model: str = "deepseek-chat"
     primary_api_key: Optional[str] = None
+    primary_base_url: str = "https://api.deepseek.com"
 
-    # Local provider (Ollama)
-    local_provider: str = "ollama"
-    local_base_url: str = "http://localhost:11434"
-    local_model: str = "deepseek-coder:33b"
-
-    # Fallback provider (DeepSeek API)
-    fallback_provider: str = "deepseek"
-    fallback_base_url: str = "https://api.deepseek.com"
-    fallback_model: str = "deepseek-chat"
-    fallback_api_key: Optional[str] = None
-
-    # Usage allocation
+    # Usage allocation - all tasks use primary
     strategy_generation_provider: str = "primary"
-    knowledge_extraction_provider: str = "local"
-    idea_harvesting_provider: str = "local"
+    knowledge_extraction_provider: str = "primary"
+    idea_harvesting_provider: str = "primary"
     mutation_guidance_provider: str = "primary"
 
     # Rate limiting
-    max_requests_per_minute: int = 30
-    timeout_seconds: int = 60
+    max_requests_per_minute: int = 60
+    timeout_seconds: int = 120
 
 
 @dataclass
