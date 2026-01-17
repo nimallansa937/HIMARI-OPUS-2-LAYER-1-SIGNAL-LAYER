@@ -74,6 +74,32 @@ deployment:
   weekly_regime_check: true
   monthly_full_review: true
 
+# Shadow Environment Integration (Hinance)
+shadow_environment:
+  # Provider selection
+  provider: hinance  # Options: mock, hinance
+
+  # Hinance connection
+  hinance_url: http://localhost:8000
+  hinance_api_key: ${HINANCE_API_KEY}
+
+  # Deployment settings
+  auto_deploy: true  # Automatically deploy passing strategies
+  min_backtest_sharpe: 1.5  # Min Sharpe to deploy to shadow
+  shadow_duration_days: 21  # How long to run shadow
+  shadow_capital_per_strategy: 5000  # USD per strategy
+
+  # Performance monitoring
+  check_interval_hours: 6  # How often to check performance
+  transfer_ratio_threshold: 0.70  # Min TR for deployment approval
+  max_drawdown_threshold: 0.15  # Max DD for deployment approval
+  min_trade_count: 20  # Min trades before valid metrics
+
+  # Health monitoring
+  alert_on_low_tr: true  # Alert if TR < threshold
+  alert_on_high_dd: true  # Alert if DD > threshold
+  auto_retire_on_failure: false  # Auto-retire failing strategies
+
 # Adaptation Systems
 adaptation:
   # Drift detection
