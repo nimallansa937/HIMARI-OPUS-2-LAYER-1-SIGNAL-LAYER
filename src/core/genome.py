@@ -43,6 +43,27 @@ class SignalType(Enum):
     REGIME_TREND = "regime_trend"           # Trend strength
     REGIME_VOL = "regime_vol"               # Volatility regime
 
+    # ===== ADVANCED NON-LAG INDICATORS (10 new signals) =====
+    # Adaptive moving averages (lower lag than EMA)
+    MOMENTUM_JMA = "momentum_jma"                    # Jurik Moving Average
+    MOMENTUM_KAMA = "momentum_kama"                  # Kaufman Adaptive MA
+    MOMENTUM_HMA = "momentum_hma"                    # Hull Moving Average
+
+    # Advanced mean reversion
+    MOMENTUM_FISHER = "momentum_fisher"              # Fisher Transform
+    REVERSION_KELTNER = "reversion_keltner"          # Keltner Channel position
+
+    # Advanced volatility (OHLC-based, more accurate than ATR)
+    VOLATILITY_GARMAN_KLASS = "volatility_gk"        # Garman-Klass estimator
+
+    # Market microstructure
+    ORDERFLOW_VPIN = "orderflow_vpin"                # Volume-Synchronized PIN
+    MICROSTRUCTURE_VWAP_DIST = "microstructure_vwap" # Distance from VWAP
+
+    # Ehlers cycle analysis
+    TREND_INSTANTANEOUS = "trend_instantaneous"      # Instantaneous trendline
+    CYCLE_DOMINANT = "cycle_dominant"                # Dominant cycle period
+
 
 # Signal type to feature index mapping
 SIGNAL_FEATURE_MAP: Dict[SignalType, int] = {
@@ -60,6 +81,17 @@ SIGNAL_FEATURE_MAP: Dict[SignalType, int] = {
     SignalType.FUNDING_OI: 48,          # oi_change_1h
     SignalType.REGIME_TREND: 58,        # trend_strength
     SignalType.REGIME_VOL: 57,          # volatility_regime
+    # Advanced indicators (indices 60-69)
+    SignalType.MOMENTUM_JMA: 60,        # jma_14 (Jurik MA)
+    SignalType.MOMENTUM_KAMA: 61,       # kama_14 (Kaufman Adaptive)
+    SignalType.MOMENTUM_HMA: 62,        # hma_14 (Hull MA)
+    SignalType.MOMENTUM_FISHER: 63,     # fisher_transform
+    SignalType.REVERSION_KELTNER: 64,   # keltner_position
+    SignalType.VOLATILITY_GARMAN_KLASS: 65,  # garman_klass_vol
+    SignalType.ORDERFLOW_VPIN: 66,      # vpin (Volume-sync PIN)
+    SignalType.MICROSTRUCTURE_VWAP_DIST: 67,  # vwap_distance
+    SignalType.TREND_INSTANTANEOUS: 68, # instantaneous_trend
+    SignalType.CYCLE_DOMINANT: 69,      # dominant_cycle_period
 }
 
 # Default threshold ranges for each signal type
@@ -78,6 +110,17 @@ SIGNAL_THRESHOLD_RANGES: Dict[SignalType, tuple] = {
     SignalType.FUNDING_OI: (-0.2, 0.2),
     SignalType.REGIME_TREND: (0.3, 0.8),
     SignalType.REGIME_VOL: (0, 2),
+    # Advanced indicator thresholds
+    SignalType.MOMENTUM_JMA: (-0.05, 0.05),          # Normalized price difference
+    SignalType.MOMENTUM_KAMA: (-0.05, 0.05),         # Normalized price difference
+    SignalType.MOMENTUM_HMA: (-0.05, 0.05),          # Normalized price difference
+    SignalType.MOMENTUM_FISHER: (-3, 3),             # Fisher transform output
+    SignalType.REVERSION_KELTNER: (-2, 2),           # Z-score position in channel
+    SignalType.VOLATILITY_GARMAN_KLASS: (0.01, 0.10), # Volatility percentage
+    SignalType.ORDERFLOW_VPIN: (0, 1),               # VPIN in [0, 1]
+    SignalType.MICROSTRUCTURE_VWAP_DIST: (-0.02, 0.02), # Distance as percentage
+    SignalType.TREND_INSTANTANEOUS: (-0.1, 0.1),     # Trend slope
+    SignalType.CYCLE_DOMINANT: (10, 50),             # Cycle period in bars
 }
 
 

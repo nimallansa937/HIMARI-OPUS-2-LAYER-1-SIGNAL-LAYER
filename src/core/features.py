@@ -1,8 +1,10 @@
 """
-60-Dimensional Feature Vector System
+70-Dimensional Feature Vector System
 
 Provides type-safe feature storage and validation for trading signals.
 Each feature has defined bounds, types, and update frequencies.
+
+Expanded from 60 to 70 features to include advanced non-lag indicators.
 """
 
 from enum import Enum
@@ -123,6 +125,27 @@ FEATURE_SCHEMA: List[FeatureSpec] = [
     FeatureSpec(57, "volatility_regime", FeatureType.COUNT, 0, 2, 60000, "Volatility regime (0=low,1=med,2=high)"),
     FeatureSpec(58, "trend_strength", FeatureType.RATIO, 0, 1, 60000, "Overall trend strength"),
     FeatureSpec(59, "regime_transition_prob", FeatureType.RATIO, 0, 1, 60000, "Probability of regime transition"),
+
+    # ============== ADVANCED NON-LAG INDICATORS (60-69) ==============
+    # Adaptive Moving Averages (lower lag than EMA/SMA)
+    FeatureSpec(60, "jma_14", FeatureType.PRICE, 0, float('inf'), 1000, "14-period Jurik Moving Average (zero-lag)"),
+    FeatureSpec(61, "kama_14", FeatureType.PRICE, 0, float('inf'), 1000, "14-period Kaufman Adaptive MA (efficiency-weighted)"),
+    FeatureSpec(62, "hma_14", FeatureType.PRICE, 0, float('inf'), 1000, "14-period Hull Moving Average (low-lag)"),
+
+    # Advanced Mean Reversion & Normalization
+    FeatureSpec(63, "fisher_transform", FeatureType.ZSCORE, -5, 5, 1000, "Fisher Transform (Gaussian normalization)"),
+    FeatureSpec(64, "keltner_position", FeatureType.ZSCORE, -3, 3, 1000, "Position within Keltner Channels (z-score)"),
+
+    # Advanced Volatility (OHLC-based estimators)
+    FeatureSpec(65, "garman_klass_vol", FeatureType.RATIO, 0, 0.2, 1000, "Garman-Klass volatility estimator (OHLC)"),
+
+    # Market Microstructure & Order Flow
+    FeatureSpec(66, "vpin", FeatureType.RATIO, 0, 1, 1000, "Volume-Synchronized Probability of Informed Trading"),
+    FeatureSpec(67, "vwap_distance", FeatureType.RATE, -0.1, 0.1, 1000, "Distance from VWAP (normalized)"),
+
+    # Ehlers Cycle Analysis (DSP-based)
+    FeatureSpec(68, "instantaneous_trend", FeatureType.RATE, -0.2, 0.2, 1000, "Instantaneous trendline (Ehlers)"),
+    FeatureSpec(69, "dominant_cycle_period", FeatureType.COUNT, 10, 50, 1000, "Dominant cycle period in bars (MESA)"),
 ]
 
 # Build lookup dictionaries
@@ -137,6 +160,8 @@ FEATURE_CATEGORIES = {
     "order_flow": (35, 44),
     "funding": (45, 49),
     "sentiment": (50, 54),
+    "regime": (55, 59),
+    "advanced": (60, 69),
     "regime": (55, 59),
 }
 
