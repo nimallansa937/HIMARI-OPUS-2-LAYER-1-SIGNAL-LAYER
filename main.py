@@ -61,6 +61,9 @@ from src.infrastructure.data_interface import Layer1DataInterface
 # Crawler imports
 from src.crawler.orchestrator import CrawlerOrchestrator
 
+# Layer 0 integration - Data Quality Consumer
+from layer0_consumer import Layer0Consumer
+
 
 logger = logging.getLogger(__name__)
 
@@ -163,6 +166,10 @@ class Layer1Explorer:
         # Crawler
         self.crawler = CrawlerOrchestrator()
 
+        # Layer 0 Integration - Data Quality Consumer
+        self.l0_consumer = Layer0Consumer(symbols=["BTCUSDT", "ETHUSDT", "SOLUSDT"])
+        logger.info("Layer 0 consumer initialized for data quality filtering")
+
         # State
         self.portfolio: List[StrategyGenome] = []
         self.cycle_count = 0
@@ -186,15 +193,38 @@ class Layer1Explorer:
 
         logger.info(f"Starting cycle {self.cycle_count}")
 
+        # 0. Check Layer 0 data quality before proceeding
+        primary_symbol = "BTCUSDT"
+        use_data, quality_score = self.l0_consumer.should_use_data(primary_symbol)
+        quality_grade = self.l0_consumer.get_quality_grade(primary_symbol)
+
+        if not use_data:
+            logger.warning(
+                f"Skipping cycle {self.cycle_count} due to low data quality: "
+                f"score={quality_score:.4f}, grade={quality_grade}"
+            )
+            return {
+                'cycle': self.cycle_count,
+                'skipped': True,
+                'skip_reason': 'low_data_quality',
+                'quality_score': quality_score,
+                'quality_grade': quality_grade,
+            }
+
+        logger.info(f"Data quality check passed: score={quality_score:.4f}, grade={quality_grade}")
+
         # 1. Get market context
         context = await self.data_interface.get_current_context()
         regime = context.get('regime')
 
         # 2. Generate candidates
+        # Map regime string to integer label
+        regime_map = {'bull': 0, 'bear': 1, 'range': 2, 'volatile': 3}
+        regime_label = regime_map.get(regime, 0) if regime else 0
+
         condition = GenerationCondition(
             target_sharpe=self.config.validation.min_sharpe,
-            target_regime=regime,
-            target_timeframe="1h"
+            regime_label=regime_label
         )
 
         generation_result = await self.orchestrator.generate_candidates(
@@ -212,10 +242,10 @@ class Layer1Explorer:
             duration_seconds=generation_result.total_time_ms / 1000
         )
 
-        # 3. Validate through HIFA
-        validation_results = await self.batch_processor.process_batch(candidates)
+        # 3. Validate through HIFA (synchronous method)
+        validation_results = self.batch_processor.process_batch(candidates)
 
-        passed = [r for r in validation_results if r.passed]
+        passed = [r for r in validation_results if r.approved]
         logger.info(f"Validation: {len(passed)}/{len(candidates)} passed")
 
         self.metrics.record_hifa_pass_rate(len(passed) / max(len(candidates), 1))
@@ -266,7 +296,7 @@ class Layer1Explorer:
         logger.info(f"Deployed {deployed} strategies to shadow")
 
         # 6. Check drift for existing portfolio
-        drift_alerts = self.drift_detector.get_alert_history(window_hours=1)
+        drift_alerts = self.drift_detector.get_alert_history(limit=10)
         if drift_alerts:
             logger.warning(f"Drift detected: {len(drift_alerts)} alerts")
             for alert in drift_alerts:
@@ -281,6 +311,9 @@ class Layer1Explorer:
         # Cycle complete
         cycle_duration = (datetime.now() - cycle_start).total_seconds()
 
+        # Get quality multiplier for metrics
+        quality_multiplier = self.l0_consumer.get_quality_multiplier(primary_symbol)
+
         result = {
             'cycle': self.cycle_count,
             'candidates_generated': len(candidates),
@@ -289,7 +322,11 @@ class Layer1Explorer:
             'deployed': deployed,
             'drift_alerts': len(drift_alerts),
             'duration_seconds': cycle_duration,
-            'portfolio_size': len(self.portfolio)
+            'portfolio_size': len(self.portfolio),
+            # Layer 0 quality info
+            'data_quality_score': quality_score,
+            'data_quality_grade': quality_grade,
+            'data_quality_multiplier': quality_multiplier,
         }
 
         logger.info(f"Cycle {self.cycle_count} complete: {result}")
@@ -334,6 +371,9 @@ class Layer1Explorer:
         logger.info("Shutting down Layer 1 Explorer")
         self._running = False
         self._shutdown_event.set()
+
+        # Close Layer 0 consumer
+        self.l0_consumer.close()
 
         # Disconnect infrastructure
         await self.data_interface.disconnect_all()

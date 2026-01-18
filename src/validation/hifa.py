@@ -36,6 +36,13 @@ from ..core.grammar import GrammarValidator
 from .cpcv import CPCVValidator, CPCVConfig, CPCVResult
 from .permutation_test import PermutationTester, PermutationConfig
 
+# Import TimescaleDB backtester (production) with fallback to mock
+try:
+    from .timescale_backtester import TimescaleBacktester, create_timescale_backtester
+    TIMESCALE_AVAILABLE = True
+except ImportError:
+    TIMESCALE_AVAILABLE = False
+
 logger = logging.getLogger(__name__)
 
 
@@ -190,11 +197,32 @@ class HIFAPipeline:
         portfolio: Optional[List[StrategyGenome]] = None,
         factor_returns: Optional[np.ndarray] = None,
         cpcv_config: Optional[CPCVConfig] = None,
-        permutation_config: Optional[PermutationConfig] = None
+        permutation_config: Optional[PermutationConfig] = None,
+        use_timescale: bool = True,
+        timescale_config: Optional[Dict] = None
     ):
         self.grammar = grammar_validator
         self.surrogate = surrogate_model
-        self.backtester = backtester or MockBacktester()
+
+        # Initialize backtester - prefer TimescaleDB if available
+        if backtester is not None:
+            self.backtester = backtester
+            logger.info("Using provided backtester")
+        elif use_timescale and TIMESCALE_AVAILABLE:
+            try:
+                self.backtester = create_timescale_backtester(timescale_config)
+                logger.info("Using TimescaleDB backtester with real historical data")
+            except Exception as e:
+                logger.warning(f"Failed to initialize TimescaleDB backtester: {e}")
+                logger.warning("Falling back to MockBacktester")
+                self.backtester = MockBacktester()
+        else:
+            self.backtester = MockBacktester()
+            if use_timescale and not TIMESCALE_AVAILABLE:
+                logger.warning("TimescaleDB backtester not available, using MockBacktester")
+            else:
+                logger.info("Using MockBacktester (mock mode)")
+
         self.portfolio = portfolio or []
         self.factor_returns = factor_returns
 

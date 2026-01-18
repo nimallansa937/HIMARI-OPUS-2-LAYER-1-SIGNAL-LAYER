@@ -5,15 +5,22 @@ Connects Layer 1 Explorer to the broader HIMARI ecosystem:
 - Redis: Feature store (Layer 0 features, strategy cache)
 - Kafka: Event bus (regime signals, strategy candidates, feedback)
 - Neo4j: Knowledge graph (strategy relationships, market structure)
+- Inter-Layer Redis: Signal consumption and L1 output publishing
 """
 
 import asyncio
 import json
 import logging
+import sys
+import os
 from dataclasses import dataclass, field
 from typing import List, Dict, Optional, Any, Callable
 from datetime import datetime, timedelta
 import numpy as np
+
+# Add parent directory to path for redis_consumer import
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
+from redis_consumer import Layer1RedisConsumer
 
 logger = logging.getLogger(__name__)
 
@@ -571,6 +578,7 @@ class Layer1DataInterface:
     - Redis (features)
     - Kafka (events)
     - Neo4j (knowledge graph)
+    - Inter-layer Redis (signal consumption and L1 output publishing)
     """
 
     def __init__(self, config: Optional[Layer1Config] = None):
@@ -580,7 +588,12 @@ class Layer1DataInterface:
         self.kafka = KafkaEventBus(self.config)
         self.neo4j = Neo4jKnowledgeGraph(self.config)
 
+        # Inter-layer Redis consumer for Signal Layer communication
+        self.interlayer_redis = Layer1RedisConsumer(symbols=["BTCUSDT"])
+
         self._connected = False
+        self._signal_callbacks: List[Callable] = []
+        self._regime_callbacks: List[Callable] = []
 
     async def connect_all(self) -> Dict[str, bool]:
         """Connect to all data stores."""
@@ -589,6 +602,16 @@ class Layer1DataInterface:
         results['redis'] = await self.redis.connect()
         results['kafka'] = await self.kafka.connect()
         results['neo4j'] = await self.neo4j.connect()
+
+        # Start inter-layer Redis heartbeat and listening
+        try:
+            self.interlayer_redis.start_heartbeat()
+            self.interlayer_redis.start_listening_thread()
+            results['interlayer_redis'] = True
+            logger.info("Inter-layer Redis consumer started with heartbeat")
+        except Exception as e:
+            logger.error(f"Failed to start inter-layer Redis: {e}")
+            results['interlayer_redis'] = False
 
         self._connected = all(results.values())
 
@@ -600,6 +623,13 @@ class Layer1DataInterface:
         await self.redis.disconnect()
         await self.kafka.disconnect()
         await self.neo4j.disconnect()
+
+        # Close inter-layer Redis consumer
+        try:
+            self.interlayer_redis.close()
+        except Exception as e:
+            logger.error(f"Error closing inter-layer Redis: {e}")
+
         self._connected = False
 
     async def get_current_context(
@@ -617,19 +647,92 @@ class Layer1DataInterface:
             'timestamp': datetime.now().isoformat(),
             'features': None,
             'regime': None,
+            'regime_confidence': None,
+            'in_transition_window': False,
+            'transition_type': None,
+            'is_profitable_transition': False,
+            'signal_data': None,
             'top_strategies': []
         }
 
-        # Get features
+        # Get features from Layer 0 Redis
         features = await self.redis.get_features(symbol)
         if features is not None:
             context['features'] = features.tolist()
+
+        # Get latest signal from Signal Layer via inter-layer Redis
+        signal_data = self.interlayer_redis.get_latest_signal(symbol)
+        if signal_data:
+            context['signal_data'] = signal_data
+            context['regime'] = signal_data.get('regime')
+            context['regime_confidence'] = signal_data.get('regime_confidence')
+
+        # Get regime state from inter-layer Redis
+        regime_state = self.interlayer_redis.get_regime_state(symbol)
+        if regime_state:
+            context['regime'] = regime_state.get('current_regime', context['regime'])
+            context['regime_confidence'] = regime_state.get('regime_confidence', context['regime_confidence'])
+            context['in_transition_window'] = regime_state.get('in_transition_window', False)
+            context['transition_type'] = regime_state.get('transition_type')
+
+        # Check for profitable transition
+        context['is_profitable_transition'] = self.interlayer_redis.is_profitable_transition(symbol)
+
+        # Get regime features for conditioning
+        regime_features = self.interlayer_redis.get_regime_features(symbol)
+        context['regime_probabilities'] = {
+            'bull': float(regime_features[0]),
+            'bear': float(regime_features[1]),
+            'range': float(regime_features[2]),
+            'crisis': float(regime_features[3])
+        }
 
         # Get top strategies for context
         top_strategies = await self.neo4j.get_top_strategies(limit=10)
         context['top_strategies'] = top_strategies
 
         return context
+
+    def subscribe_to_signals(self, callback: Callable[[Dict], None]) -> None:
+        """
+        Subscribe to real-time signal updates from Signal Layer.
+
+        Args:
+            callback: Function called with signal data when new signal arrives
+        """
+        self._signal_callbacks.append(callback)
+        self.interlayer_redis.subscribe_to_signals(callback)
+        logger.info("Subscribed to inter-layer signal updates")
+
+    def subscribe_to_regime_transitions(self, callback: Callable[[Dict], None]) -> None:
+        """
+        Subscribe to regime transition events.
+
+        Args:
+            callback: Function called when regime transition occurs
+        """
+        self._regime_callbacks.append(callback)
+        self.interlayer_redis.subscribe_to_regime(callback)
+        logger.info("Subscribed to regime transition events")
+
+    def publish_l1_output(
+        self,
+        symbol: str,
+        output_data: Dict[str, Any],
+        feature_vector: Optional[List[float]] = None
+    ) -> bool:
+        """
+        Publish Layer 1 output to Redis for Layer 2 consumption.
+
+        Args:
+            symbol: Trading symbol
+            output_data: Layer 1 output data
+            feature_vector: 60D feature vector
+
+        Returns:
+            True if successful
+        """
+        return self.interlayer_redis.publish_output(symbol, output_data, feature_vector)
 
     async def publish_validated_strategies(
         self,
