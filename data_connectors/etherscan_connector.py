@@ -43,7 +43,9 @@ class EtherscanConnector:
     - Whale wallet monitoring
     """
     
-    BASE_URL = "https://api.etherscan.io/api"
+    # V2 API (V1 deprecated Aug 2025)
+    BASE_URL = "https://api.etherscan.io/v2/api"
+    CHAIN_ID = 1  # Ethereum mainnet
     
     # Popular whale/exchange wallets to monitor
     WHALE_WALLETS = {
@@ -75,6 +77,7 @@ class EtherscanConnector:
             time.sleep(0.2 - time_since_last)
         
         params['apikey'] = self.api_key
+        params['chainid'] = self.CHAIN_ID  # V2 API requires chainid
         response = self.session.get(self.BASE_URL, params=params)
         self._last_request_time = time.time()
         self._request_count += 1

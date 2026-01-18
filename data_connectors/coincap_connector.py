@@ -1,22 +1,32 @@
 """
-CoinCap API Connector
+CoinCap API Connector (v3 Pro)
 
-FREE unlimited access - no API key required.
-Real-time WebSocket streaming available.
+Now using CoinCap Pro v3 API with bearer token authentication.
+Previously used api.coincap.io/v2 which had DNS issues.
+Now uses rest.coincap.io/v3 which is fully operational.
 
 Features:
 - Real-time prices for 2000+ assets
 - Historical data
 - Exchange rates
 - WebSocket streaming
+- Bearer token authentication for Pro features
 """
 
+import os
 import time
 import logging
 from typing import Dict, List, Any, Optional
 import requests
 
 logger = logging.getLogger(__name__)
+
+# Load environment variables
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
 
 
 class CoinCapConnector:
@@ -31,7 +41,7 @@ class CoinCapConnector:
         history = cc.get_history("bitcoin", interval="d1")
     """
     
-    BASE_URL = "https://api.coincap.io/v2"
+    BASE_URL = "https://rest.coincap.io/v3"  # v3 Pro API (v2 was api.coincap.io)
     WS_URL = "wss://ws.coincap.io/prices"
     
     # Symbol to ID mapping
@@ -58,13 +68,19 @@ class CoinCapConnector:
         Initialize CoinCap connector.
         
         Args:
-            api_key: Optional API key for higher rate limits
+            api_key: CoinCap Pro API key (loaded from COINCAP_API_KEY env if not provided)
         """
         self.session = requests.Session()
         self._last_request_time = 0
         
-        if api_key:
-            self.session.headers['Authorization'] = f'Bearer {api_key}'
+        # Get API key from parameter or environment
+        self.api_key = api_key or os.getenv('COINCAP_API_KEY')
+        
+        if self.api_key:
+            self.session.headers['Authorization'] = f'Bearer {self.api_key}'
+            logger.info("CoinCap Pro API initialized with bearer token")
+        else:
+            logger.warning("No COINCAP_API_KEY found - some features may be limited")
     
     def _request(self, endpoint: str, params: Optional[Dict] = None) -> Any:
         """Rate-limited request to CoinCap API."""

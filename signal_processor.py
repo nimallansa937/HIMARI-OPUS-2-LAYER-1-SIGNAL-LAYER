@@ -64,6 +64,9 @@ from config import (
 # Enhanced Layer 1 System (NEW)
 from primitives.integrated_signal_layer import IntegratedSignalLayer, IntegratedSignalOutput
 
+# Inter-Layer Redis Publisher (NEW)
+from redis_publisher import SignalLayerRedisPublisher
+
 # Setup logging
 logging.basicConfig(
     level=logging.INFO,
@@ -230,11 +233,16 @@ class SignalProcessor:
         
         # === On-Chain Analytics Integration (NEW) ===
         self._init_onchain_primitives()
-        
+
+        # === Inter-Layer Redis Publisher (NEW) ===
+        self._interlayer_publisher = SignalLayerRedisPublisher(symbols=self.config.symbols)
+        self._interlayer_publisher.start_heartbeat()
+        logger.info("Inter-layer Redis publisher initialized and heartbeat started")
+
         # Setup graceful shutdown
         signal.signal(signal.SIGINT, self._shutdown_handler)
         signal.signal(signal.SIGTERM, self._shutdown_handler)
-        
+
         logger.info(f"SignalProcessor initialized for symbols: {self.config.symbols}")
         logger.info(f"SRM integration: {'enabled' if self.config.enable_srm else 'disabled'}")
     
@@ -1034,20 +1042,21 @@ class SignalProcessor:
     def publish_signals(self, signals: Dict[str, Any]) -> None:
         """
         Publish computed signals to Redis.
-        
+
         Uses pipelining for efficiency.
+        Also publishes to inter-layer channels for downstream layer consumption.
         """
         symbol = signals['symbol']
         timestamp = signals['timestamp']
-        
+
         pipe = self._redis.pipeline()
-        
+
         # Latest signals hash
         latest_key = RedisKeys.for_symbol(RedisKeys.SIGNALS_LATEST, symbol)
         pipe.hset(latest_key, mapping={
             k: str(v) for k, v in signals.items()
         })
-        
+
         # Individual signal keys (for efficient single-value reads)
         pipe.set(
             RedisKeys.for_symbol(RedisKeys.SIGNAL_MOMENTUM, symbol),
@@ -1073,9 +1082,37 @@ class SignalProcessor:
             RedisKeys.for_symbol(RedisKeys.SIGNAL_TIMESTAMP, symbol),
             timestamp
         )
-        
+
         pipe.execute()
         self._metrics['signals_published'] += 1
+
+        # === INTER-LAYER PUBLISHING (NEW) ===
+        # Publish to standardized channels for Layer 1 consumption
+        signal_data = {
+            'composite_signal': signals.get('ds_confidence', 0.0),
+            'regime': signals.get('regime', 'Range'),
+            'regime_confidence': signals.get('regime_confidence', 0.5),
+            'sentiment_score': signals.get('sentiment_score', 0.0),
+            'sentiment_signal': signals.get('sentiment_signal', 'NEUTRAL'),
+            'momentum_score': signals.get('momentum', 0.0),
+            'volatility_percentile': signals.get('price_percentile', 50.0) * 100,
+            'latency_ms': self._metrics.get('last_latency_ms', 0.0),
+        }
+        self._interlayer_publisher.publish_signal(symbol, signal_data)
+
+        # Build regime data from HMM probabilities
+        regime_data = {
+            'current_regime': signals.get('regime', 'Range'),
+            'regime_code': {'BULL': 2, 'BEAR': 0, 'RANGE': 1}.get(signals.get('regime', 'Range'), 1),
+            'regime_confidence': signals.get('regime_confidence', 0.5),
+            'prob_bear': 0.33,  # Default if not in signals
+            'prob_range': 0.34,
+            'prob_bull': 0.33,
+            'hurst_exponent': signals.get('hurst', 0.5),
+            'is_trending': signals.get('hurst_regime', 'RANDOM') == 'TRENDING',
+            'data_quality': 1.0,
+        }
+        self._interlayer_publisher.publish_regime(symbol, regime_data)
     
     def run(self) -> None:
         """
@@ -1162,21 +1199,27 @@ class SignalProcessor:
     def _cleanup(self) -> None:
         """Cleanup resources on shutdown."""
         logger.info("Cleaning up...")
-        
+
         # Persist final state
         self._persist_all_states()
-        
+
         # Close connections
         try:
             self._consumer.close()
         except:
             pass
-        
+
         try:
             self._redis.close()
         except:
             pass
-        
+
+        # Close inter-layer publisher
+        try:
+            self._interlayer_publisher.close()
+        except:
+            pass
+
         logger.info("Shutdown complete")
 
 
